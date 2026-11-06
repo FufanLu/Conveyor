@@ -32,7 +32,7 @@ Redis         + outbox       gRPC
 |---|---|---|---|---|
 | `gateway` | 8080 | WebFlux (Spring Cloud Gateway) | public API surface, edge policies | M0 (routing, ids, errors) · M1 auth · M7 shedding |
 | `catalog-svc` | 8081 | MVC + virtual threads | products, search index | **M1 (built)** |
-| `order-svc` | 8082 | MVC + virtual threads | orders (sharded), outbox | M2 |
+| `order-svc` | 8082 | MVC + virtual threads | orders (sharded), idempotency keys, outbox, order read model | **M2 (built)** |
 | `inventory-svc` | 8083 (gRPC 9083) | MVC + virtual threads | stock per FC, reservations | M3 |
 | `fulfillment-svc` | 8084 | Temporal workers | order saga, delivery promise | M4 |
 | `tracking-svc` | 8085 | WebFlux | shipment events, live push | M5 |
@@ -47,6 +47,7 @@ Public routes are by resource, not by service, so clients never learn the topolo
 |---|---|
 | `/api/v1/products/**`, `/api/v1/search/**` | catalog-svc |
 | `/api/v1/orders/**` | order-svc |
+| `/api/v1/ops/orders/**` | order-svc (role `ops`) |
 | `/api/v1/delivery-promises/**` | fulfillment-svc |
 | `/api/v1/shipments/**` | tracking-svc |
 
@@ -108,15 +109,37 @@ Details and measurements: [illustrated chapter 01](illustrated/01-reading-a-prod
   implementing the application ports. `ArchitectureTest` (ArchUnit) enforces it, and the domain
   has no Spring dependency.
 
-## Consistency choices (planned, M2–M5)
+## Orders (built in M2)
+
+Details and measurements: [illustrated chapter 02](illustrated/02-placing-an-order.md).
+
+- **Sharding.** 16 logical shards; shards 0–7 on pg-0, 8–15 on pg-1, each shard its own
+  `orders_NN` / `order_line_NN` tables. A customer's shard is FNV-1a(sub) mod 16. The order id
+  (41-bit ms time, 4-bit shard, 8-bit worker, 10-bit sequence; 13 chars of Crockford base32)
+  carries the shard, so lookups by id and by customer are single-shard. Routing is explicit
+  (`ShardRouter`) rather than ShardingSphere, because the outbox must commit with the order on
+  the same database and every query is single-shard by design.
+- **Placement.** Validate → price every SKU from catalog-svc in parallel within 1.5 s (503 with
+  Retry-After beyond that) → one transaction on the customer's shard: claim the idempotency key
+  (`ON CONFLICT DO NOTHING`; a concurrent duplicate blocks, then replays), insert order and lines,
+  insert the outbox row. Keys and outbox rows are purged after 24 h.
+- **Events.** `outbox` (Debezium's default column names) → publication `orders_outbox` (created by
+  Flyway) → one Debezium Postgres connector per database (pgoutput, `snapshot.mode=no_data`,
+  `poll.interval.ms=50`, heartbeats filtered before the byte-array converter) → outbox event
+  router → `orders.events` (12 partitions, key = order id, value = Protobuf `OrderEvent`).
+- **Read model.** A Kafka listener (3 consumers, record acks, 3 retries then `orders.events.dlt`)
+  indexes `orders-v1` behind alias `orders` with external versioning, so duplicates are dropped.
+  `GET /v1/ops/orders` (role `ops`) queries it.
+
+## Consistency choices (planned, M3–M5)
 
 | Decision | Choice | Why |
 |---|---|---|
 | Multi-step order workflow | Saga orchestrated by Temporal | Steps span services and minutes (payment, FC allocation). 2PC would hold locks across services; Temporal gives durable timers, retries and visible history. |
-| Order write + event publish | Transactional outbox, Debezium CDC | One local transaction instead of a DB write plus a Kafka send that can half-fail. |
-| Event consumption | At-least-once delivery, idempotent consumers | Effectively-once without distributed transactions. |
+| Order write + event publish | Transactional outbox, Debezium CDC (**built in M2**) | One local transaction instead of a DB write plus a Kafka send that can half-fail. |
+| Event consumption | At-least-once delivery, idempotent consumers (**built in M2** for the read model) | Effectively-once without distributed transactions. |
 | Hot-SKU stock | Bucketed Redis counters + Postgres ledger, reconciled | A single counter per SKU serializes the whole deal start. To be benchmarked against row locks, CAS, and a single Lua key. |
-| Order reads | CQRS: OpenSearch read model fed by CDC | Search and ops queries never touch the sharded write path. |
+| Order reads | CQRS: OpenSearch read model fed by CDC (**built in M2**) | Search and ops queries never touch the sharded write path. |
 | Tracking events | DynamoDB, partition key = shipment id | Append-heavy, key-value access, scales by partition. |
 
 ## Local infrastructure
@@ -129,7 +152,7 @@ else is behind a profile so a laptop runs only what the current milestone needs.
 | core (always on) | postgres-0, postgres-1, redis, kafka | 2.1 GiB | ≈ 440 MiB: Kafka 352, Postgres 37 + 35, Redis 14 |
 | `search` | opensearch | 1.5 GiB | 976 MiB with the 100k-product index (chapter 01) |
 | `workflow` | temporal (dev server + UI) | 384 MiB | not yet measured |
-| `events` | Debezium connect, Apicurio registry | 1.25 GiB | not yet measured |
+| `events` | Debezium connect, Apicurio registry | 1.25 GiB | 406 + 272 MiB with two connectors (chapter 02) |
 | `auth` | keycloak | 768 MiB | 626 MiB (dev mode, realm imported) |
 | `aws` | dynamodb-local | 384 MiB | not yet measured |
 | `obs` | prometheus, grafana | 640 MiB | not yet measured |

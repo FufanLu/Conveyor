@@ -2,6 +2,42 @@
 spring:
   application:
     name: order-svc
+  kafka:
+    bootstrap-servers: localhost:9092
+    consumer:
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.ByteArrayDeserializer
+      auto-offset-reset: earliest
+      enable-auto-commit: false
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.ByteArraySerializer
+      acks: all
+    listener:
+      ack-mode: record
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: http://localhost:8180/realms/conveyor
+          audiences: conveyor-api
 
 server:
   port: 8082
+
+conveyor:
+  order:
+    worker-id: ${CONVEYOR_ORDER_WORKER_ID:0}
+    databases:
+      pg0:
+        url: jdbc:postgresql://localhost:5432/orders
+        username: conveyor
+        password: conveyor
+      pg1:
+        url: jdbc:postgresql://localhost:5433/orders
+        username: conveyor
+        password: conveyor
+    catalog:
+      url: ${CONVEYOR_CATALOG_URL:http://localhost:8081}
+    search:
+      url: ${CONVEYOR_OPENSEARCH_URL:http://localhost:9200}

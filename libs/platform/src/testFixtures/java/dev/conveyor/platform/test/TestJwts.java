@@ -44,6 +44,11 @@ public final class TestJwts {
         return sign(username, Instant.now().plus(Duration.ofMinutes(5)), realmRoles);
     }
 
+    /** A valid token whose subject ({@code sub}) is exactly {@code subject}. */
+    public static String tokenForSubject(String subject, String... realmRoles) {
+        return sign(subject, subject, Instant.now().plus(Duration.ofMinutes(5)), AUDIENCE, realmRoles);
+    }
+
     /** A correctly signed token that expired a minute ago. */
     public static String expiredToken(String username, String... realmRoles) {
         return sign(username, Instant.now().minus(Duration.ofMinutes(1)), realmRoles);
@@ -88,12 +93,18 @@ public final class TestJwts {
     }
 
     private static String sign(String username, Instant expiresAt, String audience, String... realmRoles) {
+        String subject = UUID.nameUUIDFromBytes(username.getBytes(java.nio.charset.StandardCharsets.UTF_8))
+                .toString();
+        return sign(username, subject, expiresAt, audience, realmRoles);
+    }
+
+    private static String sign(
+            String username, String subject, Instant expiresAt, String audience, String... realmRoles) {
         Instant issuedAt = expiresAt.minus(Duration.ofMinutes(5));
         JWTClaimsSet claims = new JWTClaimsSet.Builder()
                 .issuer(ISSUER)
                 .audience(audience)
-                .subject(UUID.nameUUIDFromBytes(username.getBytes(java.nio.charset.StandardCharsets.UTF_8))
-                        .toString())
+                .subject(subject)
                 .claim("preferred_username", username)
                 .claim("realm_access", Map.of("roles", List.of(realmRoles)))
                 .claim("scope", "openid profile")

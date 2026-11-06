@@ -34,7 +34,6 @@ import org.springframework.stereotype.Component;
 public class OpenSearchProductSearch implements ProductSearch, AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(OpenSearchProductSearch.class);
-    private static final int VERSION_CONFLICT = 409;
 
     private final OpenSearchClient client;
     private final SearchProperties properties;
@@ -107,7 +106,7 @@ public class OpenSearchProductSearch implements ProductSearch, AutoCloseable {
         for (BulkResponseItem item : response.items()) {
             if (item.error() == null) {
                 written++;
-            } else if (item.status() != VERSION_CONFLICT) {
+            } else if (item.status() != VersionConflicts.STATUS) {
                 log.warn("bulk index failed for {}: {}", item.id(), item.error().reason());
             }
         }
@@ -124,12 +123,10 @@ public class OpenSearchProductSearch implements ProductSearch, AutoCloseable {
                         .version(product.version())
                         .versionType(VersionType.External));
                 return;
-            } catch (OpenSearchException e) {
-                if (e.status() == VERSION_CONFLICT) {
-                    return; // a newer version is already indexed
+            } catch (IOException | RuntimeException e) {
+                if (VersionConflicts.is(e)) {
+                    return; // an equal or newer version is already indexed
                 }
-                log.warn("index {} v{} attempt {} failed: {}", product.sku(), product.version(), attempt, e.toString());
-            } catch (IOException e) {
                 log.warn("index {} v{} attempt {} failed: {}", product.sku(), product.version(), attempt, e.toString());
             }
             try {

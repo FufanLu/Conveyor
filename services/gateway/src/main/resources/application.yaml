@@ -38,6 +38,12 @@ spring:
                 - Path=/api/v1/orders/**
               filters:
                 - StripPrefix=1
+            - id: ops-orders
+              uri: ${conveyor.upstreams.order}
+              predicates:
+                - Path=/api/v1/ops/orders/**
+              filters:
+                - StripPrefix=1
             - id: delivery-promises
               uri: ${conveyor.upstreams.fulfillment}
               predicates:

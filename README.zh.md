@@ -8,8 +8,9 @@
 技术上是 Java 25 + Spring Boot 4.1 的微服务。每个中间件都选的是能对应到 AWS 托管服务的那一款，
 所以同一套设计既能在装了 Docker 的笔记本上跑，也能部署到 AWS。
 
-> **当前进度：M1 已完成。** 在 M0 平台（7 个服务、统一契约测试、网关）的基础上，商品目录现在用两级缓存加
-> Bloom 过滤器提供 10 万个商品，在 OpenSearch 里做搜索；改价必须带 Keycloak 角色和匹配的 ETag。见[路线图](#路线图)。
+> **当前进度：M2 已完成。** 在 M0 平台和 M1 商品目录（两级缓存加 Bloom 过滤器、OpenSearch、带 ETag 并由 Keycloak
+> 保护的写操作）的基础上，订单现在以幂等方式写入两个 Postgres 库上的 16 个分片，通过 transactional outbox 和
+> Debezium 发到 Kafka，再投影到 OpenSearch 读模型。见[路线图](#路线图)。
 
 ## 架构
 
@@ -41,7 +42,7 @@ Redis         + outbox       gRPC
 | 消息 | Kafka (KRaft)、Apicurio schema registry | MSK、Glue Schema Registry |
 | CDC | Debezium、transactional outbox | MSK Connect、DMS |
 | 工作流 | Temporal（订单 Saga、durable timer） | Step Functions、SWF |
-| 关系库 | PostgreSQL ×2、ShardingSphere-JDBC（16 分片） | Aurora PostgreSQL |
+| 关系库 | PostgreSQL ×2、16 个逻辑分片、显式路由（分片号编码在订单 ID 里） | Aurora PostgreSQL |
 | KV | DynamoDB Local（单表设计） | DynamoDB |
 | 缓存 | Redis + Caffeine 两级缓存 | ElastiCache |
 | 搜索 | OpenSearch | OpenSearch Service |
@@ -57,8 +58,9 @@ Redis         + outbox       gRPC
   用 Lua 原子预占，再和 Postgres 台账对账。四种方案（行锁、CAS、单 key Lua、分桶）放在一起实测对比。
 - **下单 Saga（M4）。** 预占库存 → 支付授权 → 分配仓库 → 出库，任何一步失败都会补偿。
   未支付的订单由 Temporal 的 durable timer 自动取消，不用延迟队列。
-- **Outbox + CDC（M2）。** 订单和它的事件在同一个本地事务里写入，Debezium 从 WAL 读出来发到 Kafka。消费端幂等。
-- **CQRS（M2）。** 写请求走分片 Postgres，搜索和运营查询走 OpenSearch 读模型。
+- **Outbox + CDC（M2，已实现）。** 订单、幂等键和事件在用户所在分片的同一个本地事务里提交；Debezium 从 WAL
+  读出事件，以 Protobuf 字节原样发到 Kafka。CDC 宕机时下单不受影响。
+- **CQRS（M2，已实现）。** 写请求走分片 Postgres；运营查询走 OpenSearch 投影，靠外部版本号丢弃重复事件。
 - **两级缓存（M1）。** Caffeine + Redis，用 pub/sub 广播失效。single-flight 防击穿，Bloom filter 防穿透，
   TTL 加抖动防雪崩。
 - **过载保护（M7）。** 网关上做令牌桶限流，再加上按延迟自适应调整的并发上限，过载时先丢低优先级流量。
@@ -68,6 +70,12 @@ Redis         + outbox       gRPC
 ## 已经测出来的东西
 
 仓库里的每个数字都来自实际运行。
+
+**第 02 章（M2）。** 订单、幂等键和 outbox 事件在同一个事务里提交；同一个 key 的 20 个并发重试只会生成 1 个订单。
+第一次真实运行发现：Debezium 任务显示 RUNNING，10 秒后在第一次心跳时就挂了；投影把无害的重复事件送进了死信队列。
+把 Debezium 的 poll interval 调小后，提交到进入 Kafka 的中位数从 289 ms 降到 33–50 ms。停掉 Debezium 期间订单照常接收，
+它恢复流式读取后不到一秒，这些订单就出现在读模型里。
+→ [docs/illustrated/02-placing-an-order.md](docs/illustrated/02-placing-an-order.md)（英文）
 
 **第 01 章（M1）。** 1,000 个请求同时打到同一个冷 SKU，只查了 **1** 次数据库（普通 cache-aside 是 67–151 次，
 不加缓存是 1,000 次）。1 万个请求查不存在的 SKU，只查了 **3** 次数据库（cache-aside 是 1 万次）；实测的 Bloom
@@ -87,9 +95,11 @@ Keycloak 的 realm 导入把令牌里的角色弄丢了、另一个进程通过 
 
 ```bash
 ./gradlew build                       # 格式检查、javac -Werror、Error Prone、测试（含 Testcontainers）、覆盖率
-make infra-up PROFILES="search auth"  # Postgres ×2、Redis、Kafka，加上 OpenSearch 和 Keycloak
-make run-catalog-svc                  # 一个终端（第一次启动会灌入 10 万个商品）
-make run-gateway                      # 另一个终端
+make infra-up PROFILES="search auth events"  # 再加上 OpenSearch、Keycloak、Debezium connect、schema registry
+make run-catalog-svc                  # 终端 1（第一次启动会灌入 10 万个商品）
+make run-order-svc                    # 终端 2（会迁移两个订单库）
+make run-gateway                      # 终端 3
+make connectors                       # 注册 Debezium outbox 连接器
 curl -i localhost:8080/api/v1/products/B0DAA66D13
 curl -s 'localhost:8080/api/v1/search?q=pour-over%20kettle&size=3'
 ```
@@ -116,7 +126,7 @@ docs/                 架构文档和图解
 |---|---|---|
 | M0 | 平台骨架：构建、服务、网关、契约测试、中间件、CI | 完成 |
 | M1 | 商品目录 + 网关认证（Keycloak）+ 两级缓存 + OpenSearch | 完成 |
-| M2 | 订单：分片 Postgres、outbox、Debezium → Kafka、幂等键 | |
+| M2 | 订单：分片 Postgres、outbox、Debezium → Kafka、幂等键、CQRS 读模型 | 完成 |
 | M3 | 库存：多仓库存、分桶预占、对账、四种方案压测 | |
 | M4 | 履约：Temporal Saga、配送承诺、支付故障注入 | |
 | M5 | 物流追踪：快递事件洪峰、DynamoDB、SSE | |

@@ -10,10 +10,10 @@ back to the customer.
 Java 25 and Spring Boot 4.1 microservices. Each piece of middleware is chosen so it maps onto an
 AWS managed service: the same design runs on a laptop with Docker and on AWS.
 
-> **Status: M1 is done.** On top of the M0 platform (seven services, a shared contract test
-> suite, the edge), the catalog now serves 100,000 products through a two-level cache with a
-> Bloom filter, searches them in OpenSearch, and accepts price changes only with a Keycloak
-> role and a matching ETag. See [Roadmap](#roadmap).
+> **Status: M2 is done.** On top of the M0 platform and the M1 catalog (two-level cache with a
+> Bloom filter, OpenSearch, Keycloak-guarded writes with ETags), orders are now placed
+> idempotently on 16 shards over two Postgres databases, published through a transactional
+> outbox and Debezium to Kafka, and projected into an OpenSearch read model. See [Roadmap](#roadmap).
 
 ## Architecture
 
@@ -45,7 +45,7 @@ Details, data ownership and consistency choices: [docs/architecture.md](docs/arc
 | Events | Kafka (KRaft), Apicurio schema registry | MSK, Glue Schema Registry |
 | Change data capture | Debezium, transactional outbox | MSK Connect, DMS |
 | Workflows | Temporal (order saga, durable timers) | Step Functions, SWF |
-| Relational | PostgreSQL ×2, ShardingSphere-JDBC (16 shards) | Aurora PostgreSQL |
+| Relational | PostgreSQL ×2, 16 logical shards, explicit router (shard id inside the order id) | Aurora PostgreSQL |
 | Key-value | DynamoDB Local (single-table design) | DynamoDB |
 | Cache | Redis + Caffeine (two-level) | ElastiCache |
 | Search | OpenSearch | OpenSearch Service |
@@ -62,9 +62,11 @@ The interesting parts, by milestone:
   Four strategies (row lock, CAS, single Lua key, buckets) get benchmarked side by side.
 - **Order saga (M4).** Reserve stock, authorize payment, allocate an FC, ship. Any step can fail
   and is compensated. An unpaid order is cancelled by a durable Temporal timer, not a delay queue.
-- **Outbox + CDC (M2).** The order row and its event are written in one local transaction;
-  Debezium publishes the event from the WAL. Consumers are idempotent.
-- **CQRS (M2).** Writes go to sharded Postgres; search and ops queries read an OpenSearch model.
+- **Outbox + CDC (M2, built).** The order row, its idempotency key and its event commit in one
+  local transaction on the customer's shard; Debezium publishes the event from the WAL as
+  Protobuf bytes. Writes keep working while CDC is down.
+- **CQRS (M2, built).** Writes go to sharded Postgres; operations queries read an OpenSearch
+  projection that drops duplicates by external versioning.
 - **Two-level cache (M1).** Caffeine + Redis with pub/sub invalidation, single-flight against
   stampedes, Bloom filters against penetration, TTL jitter against avalanches.
 - **Overload protection (M7).** Token-bucket rate limits plus latency-based adaptive concurrency
@@ -75,6 +77,14 @@ The interesting parts, by milestone:
 ## Measured so far
 
 Every number in this repository comes from running the code.
+
+**Chapter 02 (M2).** An order commits with its idempotency key and its outbox event in one
+transaction; 20 concurrent retries with one key create exactly one order. The first run found a
+Debezium task that reported RUNNING and died 10 s later on its first heartbeat, and a projection
+that dead-lettered harmless duplicates. Lowering Debezium's poll interval took commit → Kafka
+from a 289 ms median to 33–50 ms. With Debezium stopped, orders kept being accepted and appeared
+in the read model within a second of it streaming again.
+→ [docs/illustrated/02-placing-an-order.md](docs/illustrated/02-placing-an-order.md)
 
 **Chapter 01 (M1).** 1,000 simultaneous requests for one cold SKU cause **1** database load
 (textbook cache-aside: 67–151; no cache: 1,000). 10,000 requests for SKUs that do not exist cause
@@ -99,9 +109,11 @@ Prerequisites: Docker, and any JDK 17+ to run Gradle. The build downloads JDK 25
 
 ```bash
 ./gradlew build                       # format check, javac -Werror, Error Prone, tests (Testcontainers), coverage
-make infra-up PROFILES="search auth"  # Postgres ×2, Redis, Kafka + OpenSearch + Keycloak
-make run-catalog-svc                  # in one terminal (seeds 100,000 products on first start)
-make run-gateway                      # in another
+make infra-up PROFILES="search auth events"  # + OpenSearch, Keycloak, Debezium connect, registry
+make run-catalog-svc                  # terminal 1 (seeds 100,000 products on first start)
+make run-order-svc                    # terminal 2 (migrates both order databases)
+make run-gateway                      # terminal 3
+make connectors                       # register the Debezium outbox connectors
 curl -i localhost:8080/api/v1/products/B0DAA66D13
 curl -s 'localhost:8080/api/v1/search?q=pour-over%20kettle&size=3'
 ```
@@ -131,7 +143,7 @@ docs/                 architecture and the illustrated walkthroughs
 |---|---|---|
 | M0 | Platform skeleton: build, services, edge, contract tests, infra, CI | done |
 | M1 | Catalog + gateway auth (Keycloak) + two-level cache + OpenSearch | done |
-| M2 | Orders: sharded Postgres, outbox, Debezium → Kafka, idempotency keys | |
+| M2 | Orders: sharded Postgres, outbox, Debezium → Kafka, idempotency keys, CQRS read model | done |
 | M3 | Inventory: multi-FC stock, bucketed reservations, reconciliation, 4-way benchmark | |
 | M4 | Fulfillment: Temporal saga, delivery promise, payment failure injection | |
 | M5 | Tracking: courier event firehose, DynamoDB, SSE | |

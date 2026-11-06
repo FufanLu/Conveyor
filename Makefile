@@ -3,7 +3,7 @@ COMPOSE := docker compose -f deploy/compose/compose.yaml
 PROFILES ?=
 PROFILE_FLAGS := $(foreach p,$(PROFILES),--profile $(p))
 
-.PHONY: build test fmt infra-up infra-down infra-ps infra-stats run-%
+.PHONY: build test fmt infra-up infra-down infra-ps infra-stats connectors run-%
 
 build:            ## compile, format check, Error Prone, tests, coverage
 	./gradlew build
@@ -22,6 +22,9 @@ infra-down:
 
 infra-ps:
 	$(COMPOSE) --profile full ps
+
+connectors:       ## register the Debezium outbox connectors (needs PROFILES=events and order-svc started once)
+	docker exec conveyor-connect-1 bash /setup/register.sh
 
 infra-stats:      ## live memory footprint per container
 	docker stats --no-stream --format 'table {{.Name}}\t{{.MemUsage}}\t{{.CPUPerc}}'

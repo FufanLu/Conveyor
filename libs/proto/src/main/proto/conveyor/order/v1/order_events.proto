@@ -1,0 +1,49 @@
+syntax = "proto3";
+
+package conveyor.order.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option java_multiple_files = true;
+option java_outer_classname = "OrderEventsProto";
+option java_package = "dev.conveyor.proto.order.v1";
+
+// Everything that happens to an order, as published on the Kafka topic "orders.events".
+//
+// How it gets there: order-svc writes the serialized OrderEvent into its outbox table in the
+// same local transaction as the order row; Debezium reads the insert from the Postgres WAL and
+// the outbox event router publishes it unchanged.
+//
+//   key     = order id (so every event of one order lands on one partition, in order)
+//   value   = these bytes
+//   headers = eventType ("OrderPlaced", ...), eventId (UUIDv7, the outbox row id)
+//
+// Consumers must be idempotent: delivery is at least once. order_version increases by one per
+// change of the order, so a consumer can drop anything at or below the version it already has.
+message OrderEvent {
+  string event_id = 1;
+  string order_id = 2;
+  int64 order_version = 3;
+  google.protobuf.Timestamp occurred_at = 4;
+
+  oneof body {
+    OrderPlaced placed = 10;
+  }
+}
+
+message OrderPlaced {
+  // Keycloak subject of the customer.
+  string user_id = 1;
+  repeated OrderLine lines = 2;
+  int64 total_cents = 3;
+  string currency = 4;
+  string ship_to_region = 5;
+}
+
+message OrderLine {
+  string sku = 1;
+  int32 quantity = 2;
+  // Price captured from the catalog when the order was placed. Later price changes do not
+  // affect existing orders.
+  int64 unit_price_cents = 3;
+}

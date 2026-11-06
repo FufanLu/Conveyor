@@ -13,6 +13,10 @@
       {
         "name": "catalog-admin",
         "description": "Changes catalog data such as prices."
+      },
+      {
+        "name": "ops",
+        "description": "Reads cross-customer operations views."
       }
     ]
   },
@@ -106,7 +110,8 @@
         }
       ],
       "realmRoles": [
-        "catalog-admin"
+        "catalog-admin",
+        "ops"
       ]
     }
   ]
