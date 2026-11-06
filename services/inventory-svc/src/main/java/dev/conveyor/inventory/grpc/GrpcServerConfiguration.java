@@ -8,8 +8,8 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.grpc.server.ServerBuilderCustomizer;
 
 /**
- * gRPC's default executor is a cached pool of platform threads: a 10,000-call burst created
- * thousands of them. Handlers block on Redis and JDBC, so they run on virtual threads instead.
+ * gRPC's default executor is a cached pool of platform threads: in a 10,000-call burst the
+ * failed calls alone ran on 1,182 distinct grpc-default-executor threads. Handlers block on Redis and JDBC, so they run on virtual threads instead.
  */
 @Configuration(proxyBeanMethods = false)
 class GrpcServerConfiguration {

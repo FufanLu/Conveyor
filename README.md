@@ -10,10 +10,11 @@ back to the customer.
 Java 25 and Spring Boot 4.1 microservices. Each piece of middleware is chosen so it maps onto an
 AWS managed service: the same design runs on a laptop with Docker and on AWS.
 
-> **Status: M2 is done.** On top of the M0 platform and the M1 catalog (two-level cache with a
-> Bloom filter, OpenSearch, Keycloak-guarded writes with ETags), orders are now placed
-> idempotently on 16 shards over two Postgres databases, published through a transactional
-> outbox and Debezium to Kafka, and projected into an OpenSearch read model. See [Roadmap](#roadmap).
+> **Status: M3 is done.** On top of the platform (M0), the catalog (M1: two-level cache, Bloom
+> filter, OpenSearch, guarded writes) and orders (M2: 16 shards, idempotency, outbox → Debezium
+> → Kafka, CQRS read model), inventory-svc now holds stock for the order saga over gRPC: a Redis
+> Lua gate for the contended counter, Postgres for the durable facts, a reconciler between them,
+> and a bulkhead in front. See [Roadmap](#roadmap).
 
 ## Architecture
 
@@ -57,9 +58,12 @@ Details, data ownership and consistency choices: [docs/architecture.md](docs/arc
 
 The interesting parts, by milestone:
 
-- **Hot-SKU inventory (M3).** At a deal start, thousands of checkouts hit one SKU. Stock is split
-  into Redis buckets reserved with atomic Lua scripts and reconciled against a Postgres ledger.
-  Four strategies (row lock, CAS, single Lua key, buckets) get benchmarked side by side.
+- **Hot-SKU inventory (M3, built).** At a deal start, thousands of checkouts hit one SKU. Four
+  strategies were measured on clean runners: a row lock and a conditional UPDATE plateau at
+  1.3–1.9k units/s (one row is one queue), 16 bucket rows reach ~5k, and a Redis Lua gate with
+  contention-free Postgres inserts reaches 6.5–8.1k units/s at p99 6–90 ms. inventory-svc uses
+  the last, with a reconciler that repairs stable drift and rebuilds counters after a Redis
+  restart.
 - **Order saga (M4).** Reserve stock, authorize payment, allocate an FC, ship. Any step can fail
   and is compensated. An unpaid order is cancelled by a durable Temporal timer, not a delay queue.
 - **Outbox + CDC (M2, built).** The order row, its idempotency key and its event commit in one
@@ -77,6 +81,13 @@ The interesting parts, by milestone:
 ## Measured so far
 
 Every number in this repository comes from running the code.
+
+**Chapter 03 (M3).** Selling one SKU: a Redis Lua gate sold 10,000 units in 1.2–1.5 s, against
+6.3–7.8 s with a Postgres row lock (24 runs, all without oversell). The first version of the service
+answered a 10,000-buyer burst with 45% errors and stranded units while buyers were told "sold
+out". A bulkhead of 64 in-flight reservations brought that to exactly 6,000 sold, 4,000 refused
+and zero errors on the same burst, measured with the bulkhead on and off on clean runners.
+→ [docs/illustrated/03-ten-thousand-buyers-one-sku.md](docs/illustrated/03-ten-thousand-buyers-one-sku.md)
 
 **Chapter 02 (M2).** An order commits with its idempotency key and its outbox event in one
 transaction; 20 concurrent retries with one key create exactly one order. The first run found a
@@ -112,7 +123,8 @@ Prerequisites: Docker, and any JDK 17+ to run Gradle. The build downloads JDK 25
 make infra-up PROFILES="search auth events"  # + OpenSearch, Keycloak, Debezium connect, registry
 make run-catalog-svc                  # terminal 1 (seeds 100,000 products on first start)
 make run-order-svc                    # terminal 2 (migrates both order databases)
-make run-gateway                      # terminal 3
+make run-inventory-svc                # terminal 3 (gRPC on 9083)
+make run-gateway                      # terminal 4
 make connectors                       # register the Debezium outbox connectors
 curl -i localhost:8080/api/v1/products/B0DAA66D13
 curl -s 'localhost:8080/api/v1/search?q=pour-over%20kettle&size=3'
@@ -144,7 +156,7 @@ docs/                 architecture and the illustrated walkthroughs
 | M0 | Platform skeleton: build, services, edge, contract tests, infra, CI | done |
 | M1 | Catalog + gateway auth (Keycloak) + two-level cache + OpenSearch | done |
 | M2 | Orders: sharded Postgres, outbox, Debezium → Kafka, idempotency keys, CQRS read model | done |
-| M3 | Inventory: multi-FC stock, bucketed reservations, reconciliation, 4-way benchmark | |
+| M3 | Inventory: multi-FC stock, Redis gate + Postgres facts, reconciliation, bulkhead, 4-way benchmark | done |
 | M4 | Fulfillment: Temporal saga, delivery promise, payment failure injection | |
 | M5 | Tracking: courier event firehose, DynamoDB, SSE | |
 | M6 | Web: storefront, live map, ops console | |

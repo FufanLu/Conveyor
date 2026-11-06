@@ -33,7 +33,7 @@ Redis         + outbox       gRPC
 | `gateway` | 8080 | WebFlux (Spring Cloud Gateway) | public API surface, edge policies | M0 (routing, ids, errors) · M1 auth · M7 shedding |
 | `catalog-svc` | 8081 | MVC + virtual threads | products, search index | **M1 (built)** |
 | `order-svc` | 8082 | MVC + virtual threads | orders (sharded), idempotency keys, outbox, order read model | **M2 (built)** |
-| `inventory-svc` | 8083 (gRPC 9083) | MVC + virtual threads | stock per FC, reservations | M3 |
+| `inventory-svc` | 8083 (gRPC 9083) | MVC + gRPC on virtual threads | stock per FC, reservations | **M3 (built)** |
 | `fulfillment-svc` | 8084 | Temporal workers | order saga, delivery promise | M4 |
 | `tracking-svc` | 8085 | WebFlux | shipment events, live push | M5 |
 | `payment-mock` | 8086 | MVC + virtual threads | payment authorizations (simulated) | M4 |
@@ -131,14 +131,34 @@ Details and measurements: [illustrated chapter 02](illustrated/02-placing-an-ord
   indexes `orders-v1` behind alias `orders` with external versioning, so duplicates are dropped.
   `GET /v1/ops/orders` (role `ops`) queries it.
 
-## Consistency choices (planned, M3–M5)
+## Inventory (built in M3)
+
+Details and measurements: [illustrated chapter 03](illustrated/03-ten-thousand-buyers-one-sku.md).
+
+- **Truth in Postgres** (`inventory` database): `stock(sku, fc, on_hand)` changes only on
+  restock and shipment; every hold is a `reservation` row with lines, so writing one is a
+  contention-free INSERT. available = on_hand − held − committed.
+- **Gate in Redis**: one counter per (SKU, FC), keys `inv:a:{SKU}:FC` (one cluster slot per
+  SKU). A Lua script claims a line across FCs in preference order (customer's region first,
+  then fallback rank), all or nothing. Counters are created lazily from the truth, coalesced per
+  SKU.
+- **Protocol** (gRPC, `conveyor.inventory.v1`): Reserve (idempotency key; `REJECTED` with
+  shortfalls is a result, not an error), Commit, Release (units returned exactly once),
+  GetAvailability. Holds expire (sweeper with `FOR UPDATE SKIP LOCKED`).
+- **Drift**: the reconciler repairs a counter only when its difference from the truth is
+  stable over two passes; when Redis's run_id changes (possible lost AOF writes, which would
+  oversell) it drops every counter.
+- **Overload**: at most 64 Reserve calls in flight per instance, 500 ms queue, then
+  `RESOURCE_EXHAUSTED` before anything is claimed; handlers on virtual threads.
+
+## Consistency choices (planned, M4–M5)
 
 | Decision | Choice | Why |
 |---|---|---|
 | Multi-step order workflow | Saga orchestrated by Temporal | Steps span services and minutes (payment, FC allocation). 2PC would hold locks across services; Temporal gives durable timers, retries and visible history. |
 | Order write + event publish | Transactional outbox, Debezium CDC (**built in M2**) | One local transaction instead of a DB write plus a Kafka send that can half-fail. |
 | Event consumption | At-least-once delivery, idempotent consumers (**built in M2** for the read model) | Effectively-once without distributed transactions. |
-| Hot-SKU stock | Bucketed Redis counters + Postgres ledger, reconciled | A single counter per SKU serializes the whole deal start. To be benchmarked against row locks, CAS, and a single Lua key. |
+| Hot-SKU stock | Redis Lua gate + Postgres reservation rows, reconciled (**built in M3**) | Measured against a row lock, a conditional UPDATE and 16 bucket rows: the gate sold 10,000 units 4–6× faster with p99 in tens of ms, because no Postgres row is contended. |
 | Order reads | CQRS: OpenSearch read model fed by CDC (**built in M2**) | Search and ops queries never touch the sharded write path. |
 | Tracking events | DynamoDB, partition key = shipment id | Append-heavy, key-value access, scales by partition. |
 

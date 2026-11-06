@@ -8,9 +8,10 @@
 技术上是 Java 25 + Spring Boot 4.1 的微服务。每个中间件都选的是能对应到 AWS 托管服务的那一款，
 所以同一套设计既能在装了 Docker 的笔记本上跑，也能部署到 AWS。
 
-> **当前进度：M2 已完成。** 在 M0 平台和 M1 商品目录（两级缓存加 Bloom 过滤器、OpenSearch、带 ETag 并由 Keycloak
-> 保护的写操作）的基础上，订单现在以幂等方式写入两个 Postgres 库上的 16 个分片，通过 transactional outbox 和
-> Debezium 发到 Kafka，再投影到 OpenSearch 读模型。见[路线图](#路线图)。
+> **当前进度：M3 已完成。** 在平台（M0）、商品目录（M1：两级缓存、Bloom 过滤器、OpenSearch、受保护的写操作）
+> 和订单（M2：16 分片、幂等、outbox → Debezium → Kafka、CQRS 读模型）之上，inventory-svc 现在通过 gRPC 为订单
+> saga 预占库存：竞争激烈的计数器放在 Redis Lua 闸门里，持久化的事实放在 Postgres，两者之间有对账器，前面还有一道舱壁。
+> 见[路线图](#路线图)。
 
 ## 架构
 
@@ -54,8 +55,10 @@ Redis         + outbox       gRPC
 
 按里程碑列出：
 
-- **热点 SKU 库存（M3）。** 秒杀开始那一刻，几千个下单请求同时打到同一个 SKU。库存拆进多个 Redis 桶，
-  用 Lua 原子预占，再和 Postgres 台账对账。四种方案（行锁、CAS、单 key Lua、分桶）放在一起实测对比。
+- **热点 SKU 库存（M3，已实现）。** 秒杀开始那一刻，几千个下单请求同时打到同一个 SKU。在干净的 runner 上实测了四种方案：
+  行锁和条件 UPDATE 卡在每秒 1.3–1.9k 件（一行就是一条队列），16 个分桶行能到每秒约 5k 件，Redis Lua 闸门加上无竞争的
+  Postgres 插入能到每秒 6.5–8.1k 件，p99 在 6–90 ms。inventory-svc 采用最后这种，并配了对账器：修复稳定的漂移，
+  Redis 重启后重建计数器。
 - **下单 Saga（M4）。** 预占库存 → 支付授权 → 分配仓库 → 出库，任何一步失败都会补偿。
   未支付的订单由 Temporal 的 durable timer 自动取消，不用延迟队列。
 - **Outbox + CDC（M2，已实现）。** 订单、幂等键和事件在用户所在分片的同一个本地事务里提交；Debezium 从 WAL
@@ -70,6 +73,11 @@ Redis         + outbox       gRPC
 ## 已经测出来的东西
 
 仓库里的每个数字都来自实际运行。
+
+**第 03 章（M3）。** 卖同一个 SKU：Redis Lua 闸门卖完 1 万件只要 1.2–1.5 秒，Postgres 行锁要 6.3–7.8 秒（24 轮，全部没有超卖）。
+服务的第一版在一万人同时抢购时有 45% 的请求报错，还有库存卡在中间，买家却被告知"卖完了"。加了一道同时处理 64 个预占的
+舱壁之后，同样的抢购恰好卖出 6000 件、拒绝 4000 件、零错误；这是在干净的 runner 上开关舱壁对照测出来的。
+→ [docs/illustrated/03-ten-thousand-buyers-one-sku.md](docs/illustrated/03-ten-thousand-buyers-one-sku.md)（英文）
 
 **第 02 章（M2）。** 订单、幂等键和 outbox 事件在同一个事务里提交；同一个 key 的 20 个并发重试只会生成 1 个订单。
 第一次真实运行发现：Debezium 任务显示 RUNNING，10 秒后在第一次心跳时就挂了；投影把无害的重复事件送进了死信队列。
@@ -98,7 +106,8 @@ Keycloak 的 realm 导入把令牌里的角色弄丢了、另一个进程通过 
 make infra-up PROFILES="search auth events"  # 再加上 OpenSearch、Keycloak、Debezium connect、schema registry
 make run-catalog-svc                  # 终端 1（第一次启动会灌入 10 万个商品）
 make run-order-svc                    # 终端 2（会迁移两个订单库）
-make run-gateway                      # 终端 3
+make run-inventory-svc                # 终端 3（gRPC 端口 9083）
+make run-gateway                      # 终端 4
 make connectors                       # 注册 Debezium outbox 连接器
 curl -i localhost:8080/api/v1/products/B0DAA66D13
 curl -s 'localhost:8080/api/v1/search?q=pour-over%20kettle&size=3'
@@ -127,7 +136,7 @@ docs/                 架构文档和图解
 | M0 | 平台骨架：构建、服务、网关、契约测试、中间件、CI | 完成 |
 | M1 | 商品目录 + 网关认证（Keycloak）+ 两级缓存 + OpenSearch | 完成 |
 | M2 | 订单：分片 Postgres、outbox、Debezium → Kafka、幂等键、CQRS 读模型 | 完成 |
-| M3 | 库存：多仓库存、分桶预占、对账、四种方案压测 | |
+| M3 | 库存：多仓库存、Redis 闸门 + Postgres 事实、对账、舱壁、四种方案压测 | 完成 |
 | M4 | 履约：Temporal Saga、配送承诺、支付故障注入 | |
 | M5 | 物流追踪：快递事件洪峰、DynamoDB、SSE | |
 | M6 | 前端：商城、实时地图、运维大盘 | |

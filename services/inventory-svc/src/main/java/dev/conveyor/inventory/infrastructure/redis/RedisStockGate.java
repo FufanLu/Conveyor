@@ -13,6 +13,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import org.springframework.dao.TransientDataAccessResourceException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Component;
@@ -118,7 +119,8 @@ public class RedisStockGate implements StockGate {
             }
             initialize(sku, missing);
         }
-        throw new IllegalStateException("could not initialize stock counters for " + sku);
+        // A dependency problem, not a bug: surfaces as UNAVAILABLE, which callers retry.
+        throw new TransientDataAccessResourceException("could not initialize stock counters for " + sku);
     }
 
     @Override
