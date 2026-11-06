@@ -63,12 +63,18 @@ class OrderProjectionTest {
         eventually(() -> counter("duplicate") > duplicatesBefore);
         assertThat(indexedVersion(orderId)).isEqualTo(1);
 
-        HttpResponse<String> ops = http.get(
-                "/v1/ops/orders?sku=B0DAA66D13&status=PLACED",
-                "Authorization",
-                "Bearer " + TestJwts.token("ops", "ops"));
-        assertThat(ops.statusCode()).isEqualTo(200);
-        assertThat(ops.body()).contains("\"orderId\":\"" + orderId + "\"");
+        // A GET by id is real-time; a search sees the document only after the next index refresh
+        // (1 s by default). Locally the query happened to come late enough; on CI it did not.
+        String opsToken = "Bearer " + TestJwts.token("ops", "ops");
+        eventually(() -> {
+            try {
+                HttpResponse<String> ops =
+                        http.get("/v1/ops/orders?sku=B0DAA66D13&status=PLACED", "Authorization", opsToken);
+                return ops.statusCode() == 200 && ops.body().contains("\"orderId\":\"" + orderId + "\"");
+            } catch (Exception e) {
+                return false;
+            }
+        });
 
         HttpResponse<String> customer =
                 http.get("/v1/ops/orders", "Authorization", "Bearer " + TestJwts.token("alice", "customer"));

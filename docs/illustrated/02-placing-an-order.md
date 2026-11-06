@@ -270,7 +270,11 @@ same request with alice's token → 403
 ```
 
 A cross-customer query like "all orders containing SKU x" would hit all 16 shards on the write
-side. Here it is one search, and it lags the database by the CDC pipeline (section 4b).
+side. Here it is one search, and it lags the database by the CDC pipeline (section 4b) plus up to
+one index refresh (1 s by default): fetching a document by id is real-time, but a search sees it
+only after the next refresh. CI found that one: `OrderProjectionTest` searched right after the
+document became fetchable and got `{"total":0}` on GitHub's faster runner, while it passed
+locally. It now waits for the search the same way it waits for the document.
 
 ### 5a. Duplicates were treated as failures
 
