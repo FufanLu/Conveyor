@@ -18,6 +18,9 @@ on:
       buyers:
         description: Buyers in the service burst
         default: "10000"
+      max_in_flight:
+        description: inventory-svc admission bulkhead size (100000 = effectively off)
+        default: "64"
 
 permissions:
   contents: read
@@ -100,6 +103,7 @@ jobs:
       - name: Burst
         env:
           BUYERS: ${{ inputs.buyers }}
+          MAX_IN_FLIGHT: ${{ inputs.max_in_flight }}
         run: tools/bench/service-burst.sh | tee service-burst-results.txt
 
       - uses: actions/upload-artifact@v7
