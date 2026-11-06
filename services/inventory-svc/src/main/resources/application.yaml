@@ -2,6 +2,27 @@
 spring:
   application:
     name: inventory-svc
+  datasource:
+    url: jdbc:postgresql://localhost:5432/inventory
+    username: conveyor
+    password: conveyor
+    hikari:
+      maximum-pool-size: 32
+      connection-timeout: 2000
+      initialization-fail-timeout: 30000
+  flyway:
+    locations: classpath:db/migration,classpath:db/seed
+    placeholders:
+      seed_count: 100000
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      timeout: 250ms
+      connect-timeout: 500ms
+  grpc:
+    server:
+      port: 9083
 
 server:
   port: 8083

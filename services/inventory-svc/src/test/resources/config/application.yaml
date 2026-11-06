@@ -1,0 +1,19 @@
+# Test overrides. Scheduled passes are slowed down so tests drive expiry and reconciliation.
+spring:
+  data:
+    redis:
+      # The burst tests check correctness, not latency. On a loaded workstation (load average
+      # above 200 was observed) 1,000 concurrent scripts can exceed the production 250 ms.
+      timeout: 5s
+  flyway:
+    placeholders:
+      seed_count: 2000
+  grpc:
+    server:
+      port: 0
+      inprocess:
+        name: inventory-test
+conveyor:
+  inventory:
+    reconcile-interval: PT1H
+    expiry-interval: PT1H
