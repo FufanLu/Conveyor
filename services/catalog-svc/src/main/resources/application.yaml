@@ -2,6 +2,42 @@
 spring:
   application:
     name: catalog-svc
+  datasource:
+    url: jdbc:postgresql://localhost:5432/catalog
+    username: conveyor
+    password: conveyor
+    hikari:
+      # The cache exists so the database sees a trickle; a small pool keeps it that way and
+      # fails fast (2 s) instead of queueing requests behind a saturated database.
+      maximum-pool-size: 16
+      connection-timeout: 2000
+  flyway:
+    # db/seed holds the deterministic synthetic catalog; drop it from the list in production.
+    locations: classpath:db/migration,classpath:db/seed
+    placeholders:
+      seed_count: 100000
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      timeout: 250ms
+      connect-timeout: 500ms
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          # Discovered lazily on the first authenticated request, so the service starts
+          # without Keycloak and public reads keep working if it is down.
+          issuer-uri: http://localhost:8180/realms/conveyor
+          # Tokens must be issued for Conveyor, not just by the same Keycloak realm.
+          audiences: conveyor-api
 
 server:
   port: 8081
+
+conveyor:
+  catalog:
+    cache:
+      mode: TWO_LEVEL   # TWO_LEVEL | NAIVE | NONE (the last two exist for experiments)
+    search:
+      url: ${CONVEYOR_OPENSEARCH_URL:http://localhost:9200}

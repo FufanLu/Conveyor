@@ -13,6 +13,11 @@ spring:
 
 server:
   shutdown: graceful
+  # Services sit behind the gateway, which strips /api and sends X-Forwarded-Prefix: /api.
+  # Honouring it makes request URIs (and so problem+json "instance") show the public path.
+  # The gateway itself is the edge and overrides this to "none": it must not trust a client's
+  # X-Forwarded-* headers.
+  forward-headers-strategy: framework
 
 management:
   endpoints:

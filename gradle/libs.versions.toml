@@ -12,12 +12,14 @@ errorprone = "2.52.0"
 palantir-java-format = "2.103.0"
 jacoco = "0.8.16"
 archunit = "1.5.1"
+opensearch-java = "3.10.0"
 
 [libraries]
 spring-boot-dependencies = { module = "org.springframework.boot:spring-boot-dependencies", version.ref = "spring-boot" }
 spring-cloud-dependencies = { module = "org.springframework.cloud:spring-cloud-dependencies", version.ref = "spring-cloud" }
 errorprone-core = { module = "com.google.errorprone:error_prone_core", version.ref = "errorprone" }
 archunit-junit5 = { module = "com.tngtech.archunit:archunit-junit5", version.ref = "archunit" }
+opensearch-java = { module = "org.opensearch.client:opensearch-java", version.ref = "opensearch-java" }
 protoc = { module = "com.google.protobuf:protoc", version.ref = "protobuf" }
 protoc-gen-grpc-java = { module = "io.grpc:protoc-gen-grpc-java", version.ref = "grpc" }
 

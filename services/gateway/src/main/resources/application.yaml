@@ -2,6 +2,14 @@
 spring:
   application:
     name: gateway
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          # Discovered lazily on the first request that carries a token.
+          issuer-uri: http://localhost:8180/realms/conveyor
+          # Tokens must be issued for Conveyor, not just by the same Keycloak realm.
+          audiences: conveyor-api
   cloud:
     gateway:
       server:
@@ -11,6 +19,12 @@ spring:
             # "Timeouts, retries, and backoff with jitter"). Per-route budgets come in M7.
             connect-timeout: 1000
             response-timeout: 5s
+          # Which peers may hand us X-Forwarded-* / Forwarded headers: in production, the load
+          # balancer's address range. Everyone else (locally: every client) is untrusted, so the
+          # gateway drops whatever such a client sent and writes its own X-Forwarded-For, -Proto
+          # and -Prefix (/api, from StripPrefix). Services use the prefix to rebuild public paths.
+          # Unset, the gateway sends no X-Forwarded headers at all.
+          trusted-proxies: ${CONVEYOR_TRUSTED_PROXIES:^10\.255\.255\.254$}
           routes:
             - id: catalog
               uri: ${conveyor.upstreams.catalog}
@@ -39,6 +53,8 @@ spring:
 
 server:
   port: 8080
+  # The edge: never take X-Forwarded-* from clients at face value (see platform defaults).
+  forward-headers-strategy: none
 
 # Upstream base URLs. Override per environment, e.g. CONVEYOR_UPSTREAMS_ORDER=http://order-svc:8082.
 # inventory-svc and payment-mock are internal only and have no public route.

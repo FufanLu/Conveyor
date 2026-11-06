@@ -1,0 +1,9 @@
+# Test overrides (Spring Boot loads classpath:/config/application.yaml over the main one).
+spring:
+  flyway:
+    placeholders:
+      seed_count: 2000
+conveyor:
+  catalog:
+    search:
+      bulk-size: 500

@@ -16,7 +16,7 @@ jobs:
   build:
     name: build and test
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
 
@@ -27,7 +27,11 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v6
 
-      # spotlessCheck, javac -Werror, Error Prone, unit + contract tests, JaCoCo reports.
+      # catalog-svc's integration tests start OpenSearch in a container (Testcontainers).
+      - name: Allow OpenSearch's memory maps
+        run: sudo sysctl -w vm.max_map_count=262144
+
+      # spotlessCheck, javac -Werror, Error Prone, unit, contract and Testcontainers tests, JaCoCo.
       - run: ./gradlew build
 
       - name: Upload test reports

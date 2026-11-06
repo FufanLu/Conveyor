@@ -31,7 +31,7 @@ Redis         + outbox       gRPC
 | Service | Port | Stack | Owns | Milestone |
 |---|---|---|---|---|
 | `gateway` | 8080 | WebFlux (Spring Cloud Gateway) | public API surface, edge policies | M0 (routing, ids, errors) · M1 auth · M7 shedding |
-| `catalog-svc` | 8081 | MVC + virtual threads | products, search index | M1 |
+| `catalog-svc` | 8081 | MVC + virtual threads | products, search index | **M1 (built)** |
 | `order-svc` | 8082 | MVC + virtual threads | orders (sharded), outbox | M2 |
 | `inventory-svc` | 8083 (gRPC 9083) | MVC + virtual threads | stock per FC, reservations | M3 |
 | `fulfillment-svc` | 8084 | Temporal workers | order saga, delivery promise | M4 |
@@ -73,6 +73,40 @@ real HTTP in every service's build:
   the gateway.
 - **Defaults, not mandates.** Platform settings load at the lowest precedence
   (`PlatformDefaultsEnvironmentPostProcessor`), so any service can override any of them.
+- **Identity (M1).** Services are OAuth2 resource servers for Keycloak: RS256 signature, expiry,
+  issuer and audience (`conveyor-api`) are checked everywhere. Realm roles become `ROLE_<role>`
+  (`KeycloakRealmRoles`). 401 and 403 carry the RFC 6750 `WWW-Authenticate` challenge and the
+  same problem+json body as every other error. The issuer is discovered lazily, so a service
+  starts, and serves public reads, without Keycloak.
+- **Public paths behind the gateway (M1).** The gateway trusts X-Forwarded-* only from the load
+  balancer's range (`trusted-proxies`), replaces whatever a client sent, and writes
+  `X-Forwarded-Prefix: /api`. Services honour it (`forward-headers-strategy: framework`), so
+  `instance` in a problem body is the public path. The gateway itself does not honour
+  forwarded headers.
+
+## Catalog (built in M1)
+
+Details and measurements: [illustrated chapter 01](illustrated/01-reading-a-product-under-a-stampede.md).
+
+- **Data.** `product(sku PK, title, brand, category, price_cents, currency, rating, version,
+  updated_at)` in the `catalog` database on pg-0, managed by Flyway. A deterministic seed of
+  100,000 synthetic products (`db/seed`, row count is a placeholder; tests use 2,000).
+- **Read path.** Format check → L1 Caffeine `AsyncCache` (coalesces concurrent misses per key;
+  W-TinyLFU keeps hot SKUs) → in-process Bloom filter over all SKUs (219 KiB for 100k, 0.1%
+  target at 125k) → L2 Redis hash `{v, d}` → Postgres. Absent SKUs get negative entries.
+  All TTLs are jittered by ±20%. Redis failures degrade to Postgres reads.
+- **Write path.** `PUT /v1/products/{sku}/price` requires the realm role `catalog-admin` and
+  `If-Match` (428 without, 412 on a stale ETag). The database row decides
+  (`UPDATE … WHERE version = ?`). The new version is then written to Redis by a Lua
+  compare-and-set, announced on `cat:written` (each instance raises a per-SKU version floor for
+  its L1), and indexed in OpenSearch with external versioning.
+- **Search.** OpenSearch index `products-v1` behind alias `products`: full text over title and
+  brand, filters (category, brand, price range), terms facets, bounded paging. Backfilled from
+  Postgres in the background at startup. When search is down it answers 503, and product pages
+  keep working.
+- **Layering.** `api → application → domain`, with `infrastructure` (persistence, cache, search)
+  implementing the application ports. `ArchitectureTest` (ArchUnit) enforces it, and the domain
+  has no Spring dependency.
 
 ## Consistency choices (planned, M2–M5)
 
@@ -93,10 +127,10 @@ else is behind a profile so a laptop runs only what the current milestone needs.
 | Profile | Containers | Memory limit | Measured (idle) |
 |---|---|---|---|
 | core (always on) | postgres-0, postgres-1, redis, kafka | 2.1 GiB | ≈ 440 MiB: Kafka 352, Postgres 37 + 35, Redis 14 |
-| `search` | opensearch | 1 GiB | not yet measured |
+| `search` | opensearch | 1.5 GiB | 976 MiB with the 100k-product index (chapter 01) |
 | `workflow` | temporal (dev server + UI) | 384 MiB | not yet measured |
 | `events` | Debezium connect, Apicurio registry | 1.25 GiB | not yet measured |
-| `auth` | keycloak | 768 MiB | not yet measured |
+| `auth` | keycloak | 768 MiB | 626 MiB (dev mode, realm imported) |
 | `aws` | dynamodb-local | 384 MiB | not yet measured |
 | `obs` | prometheus, grafana | 640 MiB | not yet measured |
 | `tools` | kafka-ui | 384 MiB | not yet measured |
@@ -107,4 +141,7 @@ footprint is filled in as each milestone first runs them.
 
 Host ports: Postgres 5432/5433, Redis 6379, Kafka 9092, OpenSearch 9200, Temporal 7233 (UI 8233),
 Connect 8183, schema registry 8181, Keycloak 8180, DynamoDB 8000, Prometheus 9090, Grafana 3000,
-Kafka UI 8280.
+Kafka UI 8280. On a shared workstation, check `lsof -nP -iTCP:<port> -sTCP:LISTEN` for both IPv4
+and IPv6 listeners: a process on IPv4 `127.0.0.1:<port>` takes IPv4 clients (Java) away from
+Docker's `*:<port>` without any error (chapter 01, section 8c). OpenSearch's host port is
+configurable (`CONVEYOR_OPENSEARCH_PORT`), and Spring Boot services take `SERVER_PORT`.

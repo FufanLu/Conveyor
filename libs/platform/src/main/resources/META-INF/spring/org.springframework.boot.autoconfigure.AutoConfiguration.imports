@@ -1,1 +1,2 @@
 dev.conveyor.platform.web.PlatformWebAutoConfiguration
+dev.conveyor.platform.security.PlatformSecurityAutoConfiguration

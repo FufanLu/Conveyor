@@ -15,10 +15,14 @@ import java.util.concurrent.atomic.LongAdder;
  * Closed-loop HTTP/1.1 load generator: C workers (virtual threads), each sends its next request
  * as soon as the previous one completes, until N requests total. Prints throughput and latency
  * percentiles. Usage: java LoadGen.java URL N C [warmupN]
+ *
+ * <p>With N == C every worker sends exactly one request at the same moment: a burst. If URL
+ * contains {@code %08X}, request i asks for {@code String.format(URL, 0xF0000000 + i)}, which
+ * gives N distinct SKUs that the seeded catalog does not contain (penetration tests).
  */
 public class LoadGen {
     public static void main(String[] args) throws Exception {
-        URI uri = URI.create(args[0]);
+        URI uri = URI.create(args[0].replace("%08X", "F0000000"));
         int total = Integer.parseInt(args[1]);
         int concurrency = Integer.parseInt(args[2]);
         int warmup = args.length > 3 ? Integer.parseInt(args[3]) : 0;
@@ -27,8 +31,11 @@ public class LoadGen {
                 .connectTimeout(Duration.ofSeconds(2))
                 .build();
         HttpRequest request = HttpRequest.newBuilder(uri).timeout(Duration.ofSeconds(5)).GET().build();
+        boolean template = args[0].contains("%08X");
 
-        run(client, request, warmup, concurrency); // JIT, connection pools, caches
+        if (!template) {
+            run(client, request, warmup, concurrency); // JIT, connection pools, caches
+        }
         long[] latencies = new long[total];
         Map<Integer, LongAdder> statuses = new ConcurrentHashMap<>();
         LongAdder errors = new LongAdder();
@@ -39,12 +46,21 @@ public class LoadGen {
                 pool.submit(() -> {
                     int i;
                     while ((i = next.getAndIncrement()) < total) {
+                        HttpRequest current = template
+                                ? HttpRequest.newBuilder(URI.create(String.format(args[0], 0xF000_0000L + i)))
+                                        .timeout(Duration.ofSeconds(5))
+                                        .GET()
+                                        .build()
+                                : request;
                         long t0 = System.nanoTime();
                         try {
-                            HttpResponse<Void> r = client.send(request, HttpResponse.BodyHandlers.discarding());
+                            HttpResponse<Void> r = client.send(current, HttpResponse.BodyHandlers.discarding());
                             statuses.computeIfAbsent(r.statusCode(), k -> new LongAdder()).increment();
                         } catch (Exception e) {
                             errors.increment();
+                            if (errors.sum() <= 3) {
+                                System.err.println("request failed: " + e);
+                            }
                         }
                         latencies[i] = System.nanoTime() - t0;
                     }

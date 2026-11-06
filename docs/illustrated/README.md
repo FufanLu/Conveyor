@@ -12,7 +12,7 @@ the chapter records the disagreement and the fix.
 | Chapter | Follows | Milestone |
 |---|---|---|
 | [00 — A request through the edge](00-a-request-through-the-edge.md) | `GET /api/v1/products/{sku}` through the gateway into catalog-svc; request ids, error contract, failure modes, and what logging costs an event loop | M0 |
-| 01 — Reading a product under a cache stampede | | M1 |
+| [01 — Reading a product under a stampede](01-reading-a-product-under-a-stampede.md) | Product reads through L1 / Bloom / Redis / Postgres; stampede, penetration and avalanche experiments; guarded price changes with ETags and Keycloak tokens; what the real run broke | M1 |
 | 02 — Placing an order: one transaction, one event | | M2 |
 | 03 — 10,000 buyers, one SKU | | M3 |
 | 04 — The saga, step by step and failure by failure | | M4 |

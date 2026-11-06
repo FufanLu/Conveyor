@@ -32,6 +32,7 @@ class GatewayRoutingTest {
 
     private static final AtomicReference<String> UPSTREAM_PATH = new AtomicReference<>();
     private static final AtomicReference<String> UPSTREAM_REQUEST_ID = new AtomicReference<>();
+    private static final AtomicReference<String> UPSTREAM_FORWARDED_PREFIX = new AtomicReference<>();
     private static final HttpServer UPSTREAM = startUpstream();
 
     @Autowired
@@ -75,11 +76,20 @@ class GatewayRoutingTest {
 
         assertThat(response.statusCode()).isEqualTo(200);
         assertThat(UPSTREAM_PATH.get()).isEqualTo("/v1/orders/o-123");
+        // Lets the service rebuild the public path, e.g. for problem+json "instance".
+        assertThat(UPSTREAM_FORWARDED_PREFIX.get()).isEqualTo("/api");
         // The upstream echoes X-Request-Id too; the client must still see exactly one.
         assertThat(response.headers().allValues("X-Request-Id")).hasSize(1);
         String returned = response.headers().firstValue("X-Request-Id").orElseThrow();
         assertThat(UUID.fromString(returned).version()).isEqualTo(7);
         assertThat(UPSTREAM_REQUEST_ID.get()).isEqualTo(returned);
+    }
+
+    @Test
+    void clientCannotSpoofTheForwardedPrefix() throws Exception {
+        get("/api/v1/orders/o-9", "X-Forwarded-Prefix", "/evil");
+
+        assertThat(UPSTREAM_FORWARDED_PREFIX.get()).isEqualTo("/api");
     }
 
     @Test
@@ -127,6 +137,7 @@ class GatewayRoutingTest {
             server.createContext("/", exchange -> {
                 UPSTREAM_PATH.set(exchange.getRequestURI().getPath());
                 UPSTREAM_REQUEST_ID.set(exchange.getRequestHeaders().getFirst("X-Request-Id"));
+                UPSTREAM_FORWARDED_PREFIX.set(exchange.getRequestHeaders().getFirst("X-Forwarded-Prefix"));
                 byte[] body = "{\"ok\":true}".getBytes(StandardCharsets.UTF_8);
                 exchange.getResponseHeaders().add("Content-Type", "application/json");
                 exchange.sendResponseHeaders(200, body.length);

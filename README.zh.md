@@ -8,8 +8,8 @@
 技术上是 Java 25 + Spring Boot 4.1 的微服务。每个中间件都选的是能对应到 AWS 托管服务的那一款，
 所以同一套设计既能在装了 Docker 的笔记本上跑，也能部署到 AWS。
 
-> **当前进度：M0 平台骨架已完成。** 7 个服务都能构建、启动，并通过同一套契约测试。网关已经负责路由、
-> 给请求打 ID 和统一报错，核心中间件跑在 Docker 里。业务逻辑按里程碑逐步加入（见[路线图](#路线图)）。
+> **当前进度：M1 已完成。** 在 M0 平台（7 个服务、统一契约测试、网关）的基础上，商品目录现在用两级缓存加
+> Bloom 过滤器提供 10 万个商品，在 OpenSearch 里做搜索；改价必须带 Keycloak 角色和匹配的 ETag。见[路线图](#路线图)。
 
 ## 架构
 
@@ -67,7 +67,15 @@ Redis         + outbox       gRPC
 
 ## 已经测出来的东西
 
-仓库里的每个数字都来自实际运行。图解文档第 00 章跟着一个请求穿过网关，记录了第一次真实运行发现的问题：
+仓库里的每个数字都来自实际运行。
+
+**第 01 章（M1）。** 1,000 个请求同时打到同一个冷 SKU，只查了 **1** 次数据库（普通 cache-aside 是 67–151 次，
+不加缓存是 1,000 次）。1 万个请求查不存在的 SKU，只查了 **3** 次数据库（cache-aside 是 1 万次）；实测的 Bloom
+误判率 0.020% 和公式算出来的完全一致。真实运行还发现了好几个测试没覆盖到的问题，比如 Redis 一次抖动就让服务起不来、
+Keycloak 的 realm 导入把令牌里的角色弄丢了、另一个进程通过 IPv4 悄悄共用了 8080 端口。
+→ [docs/illustrated/01-reading-a-product-under-a-stampede.md](docs/illustrated/01-reading-a-product-under-a-stampede.md)（英文）
+
+**第 00 章（M0）。** 图解文档第 00 章跟着一个请求穿过网关，记录了第一次真实运行发现的问题：
 `X-Request-Id` 头出现两次、错误响应里的 `requestId` 和响应头对不上、上游挂了却报 `500` 而不是 `503`。
 这一章还实测了网关这一跳的代价（吞吐少约 9%，p99 多 0.9 ms），以及同步日志的代价：日志下游正常时几乎为零；
 下游一旦卡住，网关就被拖到和下游一样慢（945 对 5,783 req/s）。
@@ -78,12 +86,17 @@ Redis         + outbox       gRPC
 需要 Docker，外加任意一个 JDK 17+ 用来运行 Gradle。JDK 25 由构建自动下载。
 
 ```bash
-./gradlew build                       # 格式检查、javac -Werror、Error Prone、测试、覆盖率
-make infra-up                         # Postgres ×2、Redis、Kafka（要更多就加 PROFILES="search obs"）
-make run-catalog-svc                  # 一个终端
+./gradlew build                       # 格式检查、javac -Werror、Error Prone、测试（含 Testcontainers）、覆盖率
+make infra-up PROFILES="search auth"  # Postgres ×2、Redis、Kafka，加上 OpenSearch 和 Keycloak
+make run-catalog-svc                  # 一个终端（第一次启动会灌入 10 万个商品）
 make run-gateway                      # 另一个终端
-curl -i localhost:8080/api/v1/products/B0CONVEYOR1
+curl -i localhost:8080/api/v1/products/B0DAA66D13
+curl -s 'localhost:8080/api/v1/search?q=pour-over%20kettle&size=3'
 ```
+
+Keycloak（仅用于开发）里有 realm `conveyor`，用户 `alice`/`alice`（customer）和 `ops`/`ops`（catalog-admin）；
+`client_id=conveyor-cli` 允许脚本用密码模式拿令牌。宿主机端口如果被别的项目占了可以改，比如 compose 用
+`CONVEYOR_OPENSEARCH_PORT=9210`，catalog-svc 用 `CONVEYOR_OPENSEARCH_URL=http://localhost:9210`。
 
 ## 目录结构
 
@@ -102,7 +115,7 @@ docs/                 架构文档和图解
 | | 里程碑 | 状态 |
 |---|---|---|
 | M0 | 平台骨架：构建、服务、网关、契约测试、中间件、CI | 完成 |
-| M1 | 商品目录 + 网关认证（Keycloak）+ 两级缓存 + OpenSearch | |
+| M1 | 商品目录 + 网关认证（Keycloak）+ 两级缓存 + OpenSearch | 完成 |
 | M2 | 订单：分片 Postgres、outbox、Debezium → Kafka、幂等键 | |
 | M3 | 库存：多仓库存、分桶预占、对账、四种方案压测 | |
 | M4 | 履约：Temporal Saga、配送承诺、支付故障注入 | |

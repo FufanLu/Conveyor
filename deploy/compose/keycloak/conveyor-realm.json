@@ -1,0 +1,113 @@
+{
+  "realm": "conveyor",
+  "displayName": "Conveyor (local development)",
+  "enabled": true,
+  "sslRequired": "none",
+  "accessTokenLifespan": 300,
+  "roles": {
+    "realm": [
+      {
+        "name": "customer",
+        "description": "Places and tracks orders."
+      },
+      {
+        "name": "catalog-admin",
+        "description": "Changes catalog data such as prices."
+      }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "conveyor-cli",
+      "name": "Command line and scripts (dev only: password grant)",
+      "publicClient": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "protocol": "openid-connect",
+      "protocolMappers": [
+        {
+          "name": "audience conveyor-api",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.custom.audience": "conveyor-api",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "conveyor-web",
+      "name": "Storefront and ops console (authorization code + PKCE)",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "redirectUris": [
+        "http://localhost:5173/*"
+      ],
+      "webOrigins": [
+        "http://localhost:5173"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:5173/*"
+      },
+      "protocol": "openid-connect",
+      "protocolMappers": [
+        {
+          "name": "audience conveyor-api",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.custom.audience": "conveyor-api",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "alice",
+      "enabled": true,
+      "email": "alice@example.com",
+      "emailVerified": true,
+      "firstName": "Alice",
+      "lastName": "Shopper",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "alice",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "customer"
+      ]
+    },
+    {
+      "username": "ops",
+      "enabled": true,
+      "email": "ops@example.com",
+      "emailVerified": true,
+      "firstName": "Olive",
+      "lastName": "Operator",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "ops",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "catalog-admin"
+      ]
+    }
+  ]
+}

@@ -10,9 +10,10 @@ back to the customer.
 Java 25 and Spring Boot 4.1 microservices. Each piece of middleware is chosen so it maps onto an
 AWS managed service: the same design runs on a laptop with Docker and on AWS.
 
-> **Status: M0, the platform skeleton, is done.** Seven services build, boot and pass a shared
-> contract test suite. The edge routes, tags and reports errors, and core infrastructure runs in
-> Docker. Business logic arrives milestone by milestone (see [Roadmap](#roadmap)).
+> **Status: M1 is done.** On top of the M0 platform (seven services, a shared contract test
+> suite, the edge), the catalog now serves 100,000 products through a two-level cache with a
+> Bloom filter, searches them in OpenSearch, and accepts price changes only with a Keycloak
+> role and a matching ETag. See [Roadmap](#roadmap).
 
 ## Architecture
 
@@ -73,7 +74,17 @@ The interesting parts, by milestone:
 
 ## Measured so far
 
-Every number in this repository comes from running the code. Chapter 00 of the illustrated docs
+Every number in this repository comes from running the code.
+
+**Chapter 01 (M1).** 1,000 simultaneous requests for one cold SKU cause **1** database load
+(textbook cache-aside: 67–151; no cache: 1,000). 10,000 requests for SKUs that do not exist cause
+**3** database loads (cache-aside: 10,000), and the measured Bloom false-positive rate of 0.020%
+matches the sizing formula exactly. The real run also found problems the test suite had missed,
+including a Redis blip that killed startup, a Keycloak realm import that stripped
+roles from tokens, and another process silently sharing port 8080 over IPv4.
+→ [docs/illustrated/01-reading-a-product-under-a-stampede.md](docs/illustrated/01-reading-a-product-under-a-stampede.md)
+
+**Chapter 00 (M0).** Chapter 00 of the illustrated docs
 follows one request through the edge and shows what the first real run found: a duplicated
 `X-Request-Id` header, error bodies whose `requestId` did not match the header, and a dead
 upstream reported as `500` instead of `503`. It also measures what the gateway hop costs
@@ -87,12 +98,18 @@ sink the cost is nothing. When the log sink stalls, the gateway is held to the s
 Prerequisites: Docker, and any JDK 17+ to run Gradle. The build downloads JDK 25 itself.
 
 ```bash
-./gradlew build                       # format check, javac -Werror, Error Prone, tests, coverage
-make infra-up                         # Postgres ×2, Redis, Kafka   (PROFILES="search obs" for more)
-make run-catalog-svc                  # in one terminal
+./gradlew build                       # format check, javac -Werror, Error Prone, tests (Testcontainers), coverage
+make infra-up PROFILES="search auth"  # Postgres ×2, Redis, Kafka + OpenSearch + Keycloak
+make run-catalog-svc                  # in one terminal (seeds 100,000 products on first start)
 make run-gateway                      # in another
-curl -i localhost:8080/api/v1/products/B0CONVEYOR1
+curl -i localhost:8080/api/v1/products/B0DAA66D13
+curl -s 'localhost:8080/api/v1/search?q=pour-over%20kettle&size=3'
 ```
+
+Keycloak (dev only) has the realm `conveyor` with users `alice`/`alice` (customer) and `ops`/`ops`
+(catalog-admin); `client_id=conveyor-cli` allows the password grant for scripts. Host ports can be
+moved when another project already uses them, e.g. `CONVEYOR_OPENSEARCH_PORT=9210` for compose and
+`CONVEYOR_OPENSEARCH_URL=http://localhost:9210` for catalog-svc.
 
 ## Repository layout
 
@@ -113,7 +130,7 @@ docs/                 architecture and the illustrated walkthroughs
 | | Milestone | Status |
 |---|---|---|
 | M0 | Platform skeleton: build, services, edge, contract tests, infra, CI | done |
-| M1 | Catalog + gateway auth (Keycloak) + two-level cache + OpenSearch | |
+| M1 | Catalog + gateway auth (Keycloak) + two-level cache + OpenSearch | done |
 | M2 | Orders: sharded Postgres, outbox, Debezium → Kafka, idempotency keys | |
 | M3 | Inventory: multi-FC stock, bucketed reservations, reconciliation, 4-way benchmark | |
 | M4 | Fulfillment: Temporal saga, delivery promise, payment failure injection | |

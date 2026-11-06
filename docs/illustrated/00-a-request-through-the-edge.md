@@ -60,8 +60,8 @@ notice:
 
 - `instance` is `/v1/products/B0CONVEYOR1`, the path *catalog-svc* saw after `StripPrefix=1`,
   not the public `/api/v1/...` path. This is fine for correlation, but it does show the
-  internal path to clients. M1 will decide whether the gateway rewrites `instance` or services
-  stop setting it.
+  internal path to clients. *(Fixed in M1: the gateway sends `X-Forwarded-Prefix: /api` and
+  services honour it, so `instance` is now the public path. See chapter 01, section 8d.)*
 - `requestId` in the body equals the `X-Request-Id` header, so an error report from a client
   is enough to find every log line for that call.
 
