@@ -41,15 +41,17 @@ class InventoryGrpcService extends InventoryServiceGrpc.InventoryServiceImplBase
     private static final Logger log = LoggerFactory.getLogger(InventoryGrpcService.class);
 
     private final ReservationService reservations;
+    private final ReservationAdmission admission;
 
-    InventoryGrpcService(ReservationService reservations) {
+    InventoryGrpcService(ReservationService reservations, ReservationAdmission admission) {
         this.reservations = reservations;
+        this.admission = admission;
     }
 
     @Override
     public void reserve(ReserveRequest request, StreamObserver<ReserveResponse> out) {
         answer(out, () -> {
-            Reservation r = reservations.reserve(new ReserveCommand(
+            Reservation r = admission.admit(() -> reservations.reserve(new ReserveCommand(
                     request.getIdempotencyKey(),
                     request.getOrderId(),
                     request.getLinesList().stream()
@@ -60,7 +62,7 @@ class InventoryGrpcService extends InventoryServiceGrpc.InventoryServiceImplBase
                             ? Duration.ofSeconds(
                                     request.getHoldTtl().getSeconds(),
                                     request.getHoldTtl().getNanos())
-                            : null));
+                            : null)));
             java.time.Instant expires = r.expiresAt();
             ReserveResponse.Builder response = ReserveResponse.newBuilder()
                     .setReservationId(r.id().toString())

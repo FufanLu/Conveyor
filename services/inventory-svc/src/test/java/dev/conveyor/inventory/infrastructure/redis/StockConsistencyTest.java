@@ -11,7 +11,12 @@ import dev.conveyor.inventory.application.ReserveCommand;
 import dev.conveyor.inventory.domain.FulfillmentCenter;
 import dev.conveyor.inventory.domain.Line;
 import dev.conveyor.inventory.domain.Reservation;
-import dev.conveyor.inventory.domain.ReservationStatus;
+import dev.conveyor.proto.inventory.v1.InventoryServiceGrpc;
+import dev.conveyor.proto.inventory.v1.ReservationStatus;
+import dev.conveyor.proto.inventory.v1.ReserveRequest;
+import io.grpc.ManagedChannel;
+import io.grpc.Status;
+import io.grpc.StatusRuntimeException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -21,6 +26,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.ThreadLocalRandom;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -55,26 +61,54 @@ class StockConsistencyTest {
     @Autowired
     private JdbcClient jdbc;
 
+    @Autowired
+    private ManagedChannel channel;
+
+    /**
+     * Through the real entry point: the gRPC service with its admission bulkhead, and clients
+     * that retry RESOURCE_EXHAUSTED with jittered backoff and the same idempotency key, as the
+     * saga does. (Calling the service layer with 1,000 threads at once bypasses the bulkhead and
+     * only measures how long Redis takes to drain an unbounded queue on a loaded machine.)
+     */
     @Test
     void aThousandBuyersForAHundredUnitsNeverOversell() throws Exception {
         String sku = StockFixtures.sku(jdbc, Map.of("east-1", 60, "west-1", 40));
+        var inventory = InventoryServiceGrpc.newBlockingStub(channel);
         CountDownLatch go = new CountDownLatch(1);
-        List<Future<Reservation>> buyers = new ArrayList<>();
+        List<Future<ReservationStatus>> buyers = new ArrayList<>();
         try (ExecutorService pool = Executors.newVirtualThreadPerTaskExecutor()) {
             for (int i = 0; i < 1_000; i++) {
                 buyers.add(pool.submit(() -> {
+                    ReserveRequest request = ReserveRequest.newBuilder()
+                            .setIdempotencyKey("k-" + UUID.randomUUID())
+                            .setOrderId("order-" + UUID.randomUUID())
+                            .setShipToRegion("us-east")
+                            .addLines(dev.conveyor.proto.inventory.v1.Line.newBuilder()
+                                    .setSku(sku)
+                                    .setQuantity(1))
+                            .build();
                     go.await();
-                    return reservations.reserve(command(sku, 1, "us-east"));
+                    for (int attempt = 0; ; attempt++) {
+                        try {
+                            return inventory.reserve(request).getStatus();
+                        } catch (StatusRuntimeException e) {
+                            if (e.getStatus().getCode() != Status.Code.RESOURCE_EXHAUSTED || attempt > 50) {
+                                throw e;
+                            }
+                            Thread.sleep(
+                                    ThreadLocalRandom.current().nextLong(Math.min(1_000, 20L << Math.min(attempt, 6))));
+                        }
+                    }
                 }));
             }
             go.countDown();
             int held = 0;
             int rejected = 0;
-            for (Future<Reservation> b : buyers) {
-                switch (b.get().status()) {
-                    case HELD -> held++;
-                    case REJECTED -> rejected++;
-                    default -> throw new AssertionError("unexpected " + b.get().status());
+            for (Future<ReservationStatus> b : buyers) {
+                switch (b.get()) {
+                    case RESERVATION_STATUS_HELD -> held++;
+                    case RESERVATION_STATUS_REJECTED -> rejected++;
+                    default -> throw new AssertionError("unexpected " + b.get());
                 }
             }
             assertThat(held).isEqualTo(100);
@@ -104,7 +138,8 @@ class StockConsistencyTest {
 
         reservations.expireDue(100);
 
-        assertThat(store.find(held.id()).orElseThrow().status()).isEqualTo(ReservationStatus.EXPIRED);
+        assertThat(store.find(held.id()).orElseThrow().status())
+                .isEqualTo(dev.conveyor.inventory.domain.ReservationStatus.EXPIRED);
         assertThat(reservations.availability(List.of(sku))).containsEntry(sku, 5L);
     }
 
