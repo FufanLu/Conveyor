@@ -1,0 +1,112 @@
+syntax = "proto3";
+
+package conveyor.inventory.v1;
+
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+
+option java_multiple_files = true;
+option java_outer_classname = "InventoryServiceProto";
+option java_package = "dev.conveyor.proto.inventory.v1";
+
+// InventoryService owns sellable stock across fulfillment centers (FCs).
+//
+// The order saga drives a two-step reservation protocol:
+//   Reserve -> hold stock for a bounded time (hold_ttl); the hold expires on its own
+//   Commit  -> payment was captured; the hold becomes a pick obligation at the FC
+//   Release -> compensation (payment failed, order cancelled) or explicit early expiry
+//
+// Every mutating call carries an idempotency key. The saga retries on timeouts, and a retried
+// Reserve must return the original reservation instead of holding stock twice.
+//
+// Status: contract draft. Implemented in milestone M3 (inventory-svc).
+service InventoryService {
+  rpc Reserve(ReserveRequest) returns (ReserveResponse);
+  rpc Commit(CommitRequest) returns (CommitResponse);
+  rpc Release(ReleaseRequest) returns (ReleaseResponse);
+  rpc GetAvailability(GetAvailabilityRequest) returns (GetAvailabilityResponse);
+}
+
+message ReserveRequest {
+  // Same key => same reservation. Scoped to the order, e.g. "<order_id>:reserve".
+  string idempotency_key = 1;
+  string order_id = 2;
+  repeated Line lines = 3;
+  // Region of the delivery address, e.g. "us-east". Drives which FCs are preferred.
+  string ship_to_region = 4;
+  // How long the hold lives without a Commit. Server clamps to [1m, 30m].
+  google.protobuf.Duration hold_ttl = 5;
+}
+
+message Line {
+  string sku = 1;
+  int32 quantity = 2;
+}
+
+message ReserveResponse {
+  string reservation_id = 1;
+  ReservationStatus status = 2;
+  // Where each unit is held. One SKU may be split across FCs.
+  repeated Allocation allocations = 3;
+  // Set when status is REJECTED: what could not be satisfied.
+  repeated Line shortfalls = 4;
+  google.protobuf.Timestamp expires_at = 5;
+}
+
+message Allocation {
+  string sku = 1;
+  string fc_id = 2;
+  int32 quantity = 3;
+}
+
+enum ReservationStatus {
+  RESERVATION_STATUS_UNSPECIFIED = 0;
+  RESERVATION_STATUS_HELD = 1;
+  RESERVATION_STATUS_COMMITTED = 2;
+  RESERVATION_STATUS_RELEASED = 3;
+  // Not enough sellable stock. A business outcome, not an RPC error: the saga ends the order.
+  RESERVATION_STATUS_REJECTED = 4;
+  RESERVATION_STATUS_EXPIRED = 5;
+}
+
+message CommitRequest {
+  string idempotency_key = 1;
+  string reservation_id = 2;
+}
+
+message CommitResponse {
+  ReservationStatus status = 1;
+}
+
+message ReleaseRequest {
+  string idempotency_key = 1;
+  string reservation_id = 2;
+  ReleaseReason reason = 3;
+}
+
+enum ReleaseReason {
+  RELEASE_REASON_UNSPECIFIED = 0;
+  RELEASE_REASON_PAYMENT_FAILED = 1;
+  RELEASE_REASON_ORDER_CANCELLED = 2;
+  RELEASE_REASON_SAGA_TIMEOUT = 3;
+}
+
+message ReleaseResponse {
+  ReservationStatus status = 1;
+}
+
+message GetAvailabilityRequest {
+  repeated string skus = 1;
+  string ship_to_region = 2;
+}
+
+message GetAvailabilityResponse {
+  repeated SkuAvailability items = 1;
+}
+
+message SkuAvailability {
+  string sku = 1;
+  // Sellable units across all FCs that can serve the region. Read from cache: may lag by
+  // a few hundred milliseconds, so it is a display hint, never a promise. Reserve decides.
+  int64 sellable = 2;
+}

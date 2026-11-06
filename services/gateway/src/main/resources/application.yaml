@@ -1,0 +1,50 @@
+# Platform defaults (actuator, metrics, logging) come from libs/platform.
+spring:
+  application:
+    name: gateway
+  cloud:
+    gateway:
+      server:
+        webflux:
+          httpclient:
+            # Fail fast instead of queueing behind a sick upstream (Builders' Library:
+            # "Timeouts, retries, and backoff with jitter"). Per-route budgets come in M7.
+            connect-timeout: 1000
+            response-timeout: 5s
+          routes:
+            - id: catalog
+              uri: ${conveyor.upstreams.catalog}
+              predicates:
+                - Path=/api/v1/products/**,/api/v1/search/**
+              filters:
+                - StripPrefix=1
+            - id: orders
+              uri: ${conveyor.upstreams.order}
+              predicates:
+                - Path=/api/v1/orders/**
+              filters:
+                - StripPrefix=1
+            - id: delivery-promises
+              uri: ${conveyor.upstreams.fulfillment}
+              predicates:
+                - Path=/api/v1/delivery-promises/**
+              filters:
+                - StripPrefix=1
+            - id: shipments
+              uri: ${conveyor.upstreams.tracking}
+              predicates:
+                - Path=/api/v1/shipments/**
+              filters:
+                - StripPrefix=1
+
+server:
+  port: 8080
+
+# Upstream base URLs. Override per environment, e.g. CONVEYOR_UPSTREAMS_ORDER=http://order-svc:8082.
+# inventory-svc and payment-mock are internal only and have no public route.
+conveyor:
+  upstreams:
+    catalog: http://localhost:8081
+    order: http://localhost:8082
+    fulfillment: http://localhost:8084
+    tracking: http://localhost:8085

@@ -1,0 +1,7 @@
+# Platform defaults (actuator, metrics, virtual threads, logging) come from libs/platform.
+spring:
+  application:
+    name: payment-mock
+
+server:
+  port: 8086

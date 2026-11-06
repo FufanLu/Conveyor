@@ -1,0 +1,7 @@
+# Platform defaults (actuator, metrics, virtual threads, logging) come from libs/platform.
+spring:
+  application:
+    name: inventory-svc
+
+server:
+  port: 8083

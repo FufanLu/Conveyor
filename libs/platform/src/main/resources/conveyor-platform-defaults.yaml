@@ -1,0 +1,41 @@
+# Platform defaults for every Conveyor service, loaded at the lowest precedence by
+# PlatformDefaultsEnvironmentPostProcessor. A service overrides any of these in its own
+# application.yaml, with environment variables, or on the command line.
+
+spring:
+  threads:
+    virtual:
+      # Blocking servlet code runs on virtual threads, so a slow downstream call parks a cheap
+      # virtual thread instead of pinning one of 200 platform threads.
+      enabled: true
+  lifecycle:
+    timeout-per-shutdown-phase: 20s
+
+server:
+  shutdown: graceful
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true   # /actuator/health/liveness and /readiness for Kubernetes probes
+  info:
+    java:
+      enabled: true
+  observations:
+    key-values:
+      application: ${spring.application.name}
+  metrics:
+    distribution:
+      # Export real histogram buckets so P99 is computed server-side with histogram_quantile(),
+      # not averaged from per-instance percentiles (which cannot be aggregated).
+      percentiles-histogram:
+        http.server.requests: true
+
+logging:
+  pattern:
+    correlation: "[%X{requestId:-}] "

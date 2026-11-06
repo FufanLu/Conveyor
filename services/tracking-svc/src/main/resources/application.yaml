@@ -1,0 +1,7 @@
+# Platform defaults (actuator, metrics, virtual threads, logging) come from libs/platform.
+spring:
+  application:
+    name: tracking-svc
+
+server:
+  port: 8085

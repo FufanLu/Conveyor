@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Platform logging for every Conveyor service: Spring Boot's console format, written through an
+  AsyncAppender so that a request thread never waits on stdout.
+
+  Why: on the reactive gateway, access-log lines are written from Netty event-loop threads. With
+  a healthy sink, a synchronous ConsoleAppender costs nothing measurable. When the sink stalls
+  (a log shipper falling behind, a container log driver under pressure, a full disk), the write
+  blocks the event loop, and every connection on that loop waits with it.
+  docs/illustrated/00-a-request-through-the-edge.md, section 5, measures both cases.
+
+  neverBlock=true: when the queue is full, drop the event instead of blocking. A lost log line
+  is cheaper than a stalled event loop at peak. discardingThreshold sheds TRACE/DEBUG/INFO first,
+  once the queue is more than 80% full; WARN and ERROR are dropped only when it is completely full.
+
+  A service can replace this file with its own logback-spring.xml.
+-->
+<configuration>
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+    <include resource="org/springframework/boot/logging/logback/console-appender.xml"/>
+
+    <appender name="ASYNC_CONSOLE" class="ch.qos.logback.classic.AsyncAppender">
+        <queueSize>8192</queueSize>
+        <discardingThreshold>1638</discardingThreshold>
+        <neverBlock>true</neverBlock>
+        <includeCallerData>false</includeCallerData>
+        <appender-ref ref="CONSOLE"/>
+    </appender>
+
+    <root level="INFO">
+        <appender-ref ref="ASYNC_CONSOLE"/>
+    </root>
+</configuration>
