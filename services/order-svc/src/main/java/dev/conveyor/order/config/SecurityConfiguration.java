@@ -17,7 +17,11 @@ class SecurityConfiguration {
     SecurityFilterChain api(HttpSecurity http, ProblemJsonServletSecurityHandlers problems) throws Exception {
         http.csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                .authorizeHttpRequests(auth -> auth.requestMatchers("/v1/ops/**")
+                // /internal/** has no public route at the gateway; it is reachable only inside the
+                // service network. Service-to-service identity (mTLS or client credentials) is M7.
+                .authorizeHttpRequests(auth -> auth.requestMatchers("/internal/**")
+                        .permitAll()
+                        .requestMatchers("/v1/ops/**")
                         .hasRole("ops")
                         .requestMatchers("/v1/orders", "/v1/orders/**")
                         .authenticated()

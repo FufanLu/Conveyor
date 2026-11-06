@@ -36,4 +36,26 @@ final class OrderEvents {
                 .setPlaced(placed)
                 .build();
     }
+
+    static OrderEvent statusChanged(Order order, UUID eventId, java.time.Instant at) {
+        dev.conveyor.proto.order.v1.OrderStatusChanged.Builder changed =
+                dev.conveyor.proto.order.v1.OrderStatusChanged.newBuilder()
+                        .setStatus(order.status().name());
+        if (order.statusReason() != null) {
+            changed.setReason(order.statusReason());
+        }
+        if (order.promisedDelivery() != null) {
+            java.time.Instant p = order.promisedDelivery();
+            changed.setPromisedDelivery(
+                    Timestamp.newBuilder().setSeconds(p.getEpochSecond()).setNanos(p.getNano()));
+        }
+        return OrderEvent.newBuilder()
+                .setEventId(eventId.toString())
+                .setOrderId(order.id().toString())
+                .setOrderVersion(order.version())
+                .setOccurredAt(
+                        Timestamp.newBuilder().setSeconds(at.getEpochSecond()).setNanos(at.getNano()))
+                .setStatusChanged(changed)
+                .build();
+    }
 }

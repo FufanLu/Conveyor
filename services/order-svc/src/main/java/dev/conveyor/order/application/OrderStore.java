@@ -17,6 +17,23 @@ public interface OrderStore {
 
     Optional<Order> find(OrderId id);
 
+    /**
+     * PLACED to a terminal status, in one transaction with its OrderStatusChanged outbox event.
+     * Repeating the same transition is a no-op; a different terminal status is a conflict.
+     */
+    StatusChange changeStatus(
+            OrderId id, dev.conveyor.order.domain.OrderStatus to, String reason, java.time.Instant promisedDelivery);
+
+    sealed interface StatusChange {
+        record Changed(Order order) implements StatusChange {}
+
+        record AlreadyThere(Order order) implements StatusChange {}
+
+        record Conflict(Order order) implements StatusChange {}
+
+        record NotFound() implements StatusChange {}
+    }
+
     /** Newest first, strictly older than {@code before} if given. Single-shard. */
     List<Order> listForUser(String userId, Optional<OrderId> before, int limit);
 }

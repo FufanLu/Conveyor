@@ -13,7 +13,9 @@ public record Order(
         String currency,
         String shipToRegion,
         long version,
-        Instant placedAt) {
+        Instant placedAt,
+        String statusReason,
+        Instant promisedDelivery) {
 
     public Order {
         Objects.requireNonNull(id, "id");
@@ -35,6 +37,6 @@ public record Order(
         for (OrderLine line : lines) {
             total = Math.addExact(total, line.totalCents());
         }
-        return new Order(id, userId, OrderStatus.PLACED, lines, total, currency, shipToRegion, 1, at);
+        return new Order(id, userId, OrderStatus.PLACED, lines, total, currency, shipToRegion, 1, at, null, null);
     }
 }

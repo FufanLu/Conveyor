@@ -223,6 +223,37 @@ class PlaceOrderApiTest {
         assertThat(http.get("/v1/orders/" + placed.get(0)).statusCode()).isEqualTo(401);
     }
 
+    @Test
+    void theSagaMovesAnOrderToOneTerminalStatusWithItsEventAndRetriesAreHarmless() throws Exception {
+        String id = orderId(place("key-" + UUID.randomUUID(), BODY));
+        String confirm = "{\"status\":\"CONFIRMED\",\"promisedDelivery\":\"2026-11-09T00:00:00Z\"}";
+
+        HttpResponse<String> first = http.post("/internal/v1/orders/" + id + "/status", confirm);
+        HttpResponse<String> retry = http.post("/internal/v1/orders/" + id + "/status", confirm);
+        HttpResponse<String> other = http.post("/internal/v1/orders/" + id + "/status", "{\"status\":\"CANCELLED\"}");
+
+        assertThat(first.statusCode()).isEqualTo(200);
+        assertThat(first.body())
+                .contains("\"status\":\"CONFIRMED\"")
+                .contains("\"version\":2")
+                .contains("\"promisedDelivery\":\"2026-11-09T00:00:00Z\"");
+        assertThat(retry.statusCode()).isEqualTo(200);
+        assertThat(retry.body()).contains("\"version\":2");
+        assertThat(other.statusCode()).isEqualTo(409);
+        assertThat(other.body()).contains("\"currentStatus\":\"CONFIRMED\"");
+
+        ShardGroup db = router.group(OrderId.parse(id).shard());
+        List<byte[]> events = db.jdbc()
+                .sql("SELECT payload FROM outbox WHERE aggregateid = :id ORDER BY created_at")
+                .param("id", id)
+                .query(byte[].class)
+                .list();
+        assertThat(events).hasSize(2);
+        OrderEvent changed = OrderEvent.parseFrom(events.get(1));
+        assertThat(changed.getOrderVersion()).isEqualTo(2);
+        assertThat(changed.getStatusChanged().getStatus()).isEqualTo("CONFIRMED");
+    }
+
     private HttpResponse<String> place(String key, String body) throws Exception {
         return http.post("/v1/orders", body, "Authorization", token, "Idempotency-Key", key);
     }

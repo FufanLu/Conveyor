@@ -34,9 +34,9 @@ Redis         + outbox       gRPC
 | `catalog-svc` | 8081 | MVC + virtual threads | products, search index | **M1 (built)** |
 | `order-svc` | 8082 | MVC + virtual threads | orders (sharded), idempotency keys, outbox, order read model | **M2 (built)** |
 | `inventory-svc` | 8083 (gRPC 9083) | MVC + gRPC on virtual threads | stock per FC, reservations | **M3 (built)** |
-| `fulfillment-svc` | 8084 | Temporal workers | order saga, delivery promise | M4 |
+| `fulfillment-svc` | 8084 | Temporal worker + Kafka starter | order saga, delivery promise | **M4 (built)** |
 | `tracking-svc` | 8085 | WebFlux | shipment events, live push | M5 |
-| `payment-mock` | 8086 | MVC + virtual threads | payment authorizations (simulated) | M4 |
+| `payment-mock` | 8086 | MVC + virtual threads | payment authorizations (simulated, failure injection) | **M4 (built)** |
 
 Each service owns its data. No service reads another service's database; they talk through
 gRPC (synchronous, internal), REST (through the gateway), or Kafka events.
@@ -151,11 +151,11 @@ Details and measurements: [illustrated chapter 03](illustrated/03-ten-thousand-b
 - **Overload**: at most 64 Reserve calls in flight per instance, 500 ms queue, then
   `RESOURCE_EXHAUSTED` before anything is claimed; handlers on virtual threads.
 
-## Consistency choices (planned, M4–M5)
+## Consistency choices
 
 | Decision | Choice | Why |
 |---|---|---|
-| Multi-step order workflow | Saga orchestrated by Temporal | Steps span services and minutes (payment, FC allocation). 2PC would hold locks across services; Temporal gives durable timers, retries and visible history. |
+| Multi-step order workflow | Saga orchestrated by Temporal (**built in M4**) | Steps span services and minutes (payment, FC allocation). 2PC would hold locks across services; Temporal gives durable timers, retries and visible history. Workflow id = order id makes the Kafka starter idempotent without a dedup table. |
 | Order write + event publish | Transactional outbox, Debezium CDC (**built in M2**) | One local transaction instead of a DB write plus a Kafka send that can half-fail. |
 | Event consumption | At-least-once delivery, idempotent consumers (**built in M2** for the read model) | Effectively-once without distributed transactions. |
 | Hot-SKU stock | Redis Lua gate + Postgres reservation rows, reconciled (**built in M3**) | Measured against a row lock, a conditional UPDATE and 16 bucket rows: the gate sold 10,000 units 4–6× faster with p99 in tens of ms, because no Postgres row is contended. |

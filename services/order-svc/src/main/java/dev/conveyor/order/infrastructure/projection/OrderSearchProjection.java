@@ -75,6 +75,10 @@ class OrderSearchProjection {
             throw new IllegalArgumentException(
                     "not an OrderEvent at " + record.topic() + "-" + record.partition() + "@" + record.offset(), e);
         }
+        if (event.getBodyCase() == OrderEvent.BodyCase.STATUS_CHANGED) {
+            projectStatus(event);
+            return;
+        }
         if (event.getBodyCase() != OrderEvent.BodyCase.PLACED) {
             log.debug("ignoring {} for {}", event.getBodyCase(), event.getOrderId());
             return;
@@ -94,6 +98,33 @@ class OrderSearchProjection {
                                 event.getOccurredAt().getNanos())
                         .toString(),
                 event.getOrderVersion());
+        write(doc);
+    }
+
+    /**
+     * Events of one order share a partition, so the PLACED document is already indexed when its
+     * status change arrives; the change is applied to it under the new version.
+     */
+    private void projectStatus(OrderEvent event) throws IOException {
+        var current = client.get(g -> g.index(properties.index()).id(event.getOrderId()), OrderDocument.class);
+        if (!current.found() || current.source() == null) {
+            throw new IllegalStateException("status change for " + event.getOrderId() + " before its PLACED event");
+        }
+        OrderDocument d = current.source();
+        write(new OrderDocument(
+                d.orderId(),
+                d.userId(),
+                event.getStatusChanged().getStatus(),
+                d.totalCents(),
+                d.currency(),
+                d.shipToRegion(),
+                d.skus(),
+                d.lines(),
+                d.placedAt(),
+                event.getOrderVersion()));
+    }
+
+    private void write(OrderDocument doc) throws IOException {
         try {
             client.index(i -> i.index(properties.index())
                     .id(doc.orderId())

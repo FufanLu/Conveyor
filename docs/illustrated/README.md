@@ -15,5 +15,5 @@ the chapter records the disagreement and the fix.
 | [01 — Reading a product under a stampede](01-reading-a-product-under-a-stampede.md) | Product reads through L1 / Bloom / Redis / Postgres; stampede, penetration and avalanche experiments; guarded price changes with ETags and Keycloak tokens; what the real run broke | M1 |
 | [02 — Placing an order: one transaction, one event](02-placing-an-order.md) | An order through pricing, the shard gene, idempotency, the outbox, Debezium, Kafka and the OpenSearch projection; a dead connector, a 290 ms poll interval, and a CDC outage | M2 |
 | [03 — 10,000 buyers, one SKU](03-ten-thousand-buyers-one-sku.md) | Reservations over gRPC; four ways to sell one hot SKU measured on clean runners; the service failing a 10,000-buyer burst, and the bulkhead that fixed it; keeping Redis honest | M3 |
-| 04 — The saga, step by step and failure by failure | | M4 |
+| [04 — The saga, step by step and failure by failure](04-the-saga.md) | One Temporal workflow per order: four endings, compensations in reverse, a durable payment wait that survives `kill -9`, a full-topic replay that starts nothing twice, and a 75-order backlog | M4 |
 | 05 — A courier scan, from GPS to the browser map | | M5 |

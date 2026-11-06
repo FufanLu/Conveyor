@@ -2,6 +2,23 @@
 spring:
   application:
     name: fulfillment-svc
+  kafka:
+    bootstrap-servers: localhost:9092
+    consumer:
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.ByteArrayDeserializer
+      auto-offset-reset: earliest
+      enable-auto-commit: false
+    listener:
+      ack-mode: record
 
 server:
   port: 8084
+
+conveyor:
+  fulfillment:
+    temporal-target: ${CONVEYOR_TEMPORAL_TARGET:localhost:7233}
+    inventory-target: ${CONVEYOR_INVENTORY_TARGET:localhost:9083}
+    payment-url: ${CONVEYOR_PAYMENT_URL:http://localhost:8086}
+    order-url: ${CONVEYOR_ORDER_URL:http://localhost:8082}
+    callback-base-url: ${CONVEYOR_FULFILLMENT_CALLBACK_URL:http://localhost:8084}

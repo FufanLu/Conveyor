@@ -13,6 +13,7 @@ palantir-java-format = "2.103.0"
 jacoco = "0.8.16"
 archunit = "1.5.1"
 opensearch-java = "3.10.0"
+temporal = "1.40.0"
 
 [libraries]
 spring-boot-dependencies = { module = "org.springframework.boot:spring-boot-dependencies", version.ref = "spring-boot" }
@@ -20,6 +21,10 @@ spring-cloud-dependencies = { module = "org.springframework.cloud:spring-cloud-d
 errorprone-core = { module = "com.google.errorprone:error_prone_core", version.ref = "errorprone" }
 archunit-junit5 = { module = "com.tngtech.archunit:archunit-junit5", version.ref = "archunit" }
 opensearch-java = { module = "org.opensearch.client:opensearch-java", version.ref = "opensearch-java" }
+temporal-sdk = { module = "io.temporal:temporal-sdk", version.ref = "temporal" }
+temporal-testing = { module = "io.temporal:temporal-testing", version.ref = "temporal" }
+# Temporal pulls protobuf-java-util 3.25; keep it in step with the protobuf runtime the Boot BOM manages.
+protobuf-java-util = { module = "com.google.protobuf:protobuf-java-util", version.ref = "protobuf" }
 protoc = { module = "com.google.protobuf:protoc", version.ref = "protobuf" }
 protoc-gen-grpc-java = { module = "io.grpc:protoc-gen-grpc-java", version.ref = "grpc" }
 

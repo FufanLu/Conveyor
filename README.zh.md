@@ -8,9 +8,10 @@
 技术上是 Java 25 + Spring Boot 4.1 的微服务。每个中间件都选的是能对应到 AWS 托管服务的那一款，
 所以同一套设计既能在装了 Docker 的笔记本上跑，也能部署到 AWS。
 
-> **当前进度：M3 已完成。** 在平台（M0）、商品目录（M1：两级缓存、Bloom 过滤器、OpenSearch、受保护的写操作）
-> 和订单（M2：16 分片、幂等、outbox → Debezium → Kafka、CQRS 读模型）之上，inventory-svc 现在通过 gRPC 为订单
-> saga 预占库存：竞争激烈的计数器放在 Redis Lua 闸门里，持久化的事实放在 Postgres，两者之间有对账器，前面还有一道舱壁。
+> **当前进度：M4 已完成。** 在平台（M0）、商品目录（M1：两级缓存、Bloom 过滤器、OpenSearch、受保护的写操作）、
+> 订单（M2：16 分片、幂等、outbox → Debezium → Kafka、CQRS 读模型）和库存（M3：Redis Lua 闸门、Postgres 事实、对账器、舱壁）
+> 之上，每个下单都会跑一个 Temporal saga：预占 → 授权 → 确认库存 → 承诺送达日期 → 确认订单，每一步都有补偿，
+> 支付等待窗口是一个 15 分钟的 durable timer。
 > 见[路线图](#路线图)。
 
 ## 架构
@@ -59,8 +60,10 @@ Redis         + outbox       gRPC
   行锁和条件 UPDATE 卡在每秒 1.3–1.9k 件（一行就是一条队列），16 个分桶行能到每秒约 5k 件，Redis Lua 闸门加上无竞争的
   Postgres 插入能到每秒 6.5–8.1k 件，p99 在 6–90 ms。inventory-svc 采用最后这种，并配了对账器：修复稳定的漂移，
   Redis 重启后重建计数器。
-- **下单 Saga（M4）。** 预占库存 → 支付授权 → 分配仓库 → 出库，任何一步失败都会补偿。
-  未支付的订单由 Temporal 的 durable timer 自动取消，不用延迟队列。
+- **下单 Saga（M4，已实现）。** 每个 `OrderPlaced` 启动一个 Temporal 工作流，工作流 id 就是订单 id，
+  所以整个 topic 重放一遍也不会重复启动任何 saga。流程是预占 → 授权 → 确认库存 → 送达承诺 → 确认订单。
+  拒付会释放库存；确认库存时 hold 已过期，就先作废支付、再释放库存。PENDING 的支付挂在 durable timer 上等回调，
+  中途把 worker `kill -9` 掉，等待照样继续。
 - **Outbox + CDC（M2，已实现）。** 订单、幂等键和事件在用户所在分片的同一个本地事务里提交；Debezium 从 WAL
   读出事件，以 Protobuf 字节原样发到 Kafka。CDC 宕机时下单不受影响。
 - **CQRS（M2，已实现）。** 写请求走分片 Postgres；运营查询走 OpenSearch 投影，靠外部版本号丢弃重复事件。
@@ -73,6 +76,12 @@ Redis         + outbox       gRPC
 ## 已经测出来的东西
 
 仓库里的每个数字都来自实际运行。
+
+**第 04 章（M4）。** 四个订单走出 saga 的四种结局：确认、缺货拒绝、拒付（库存在通知用户之前就已释放）、
+PENDING 后回调确认。在 150 秒的支付等待期间把 worker `kill -9`，Temporal 事件历史里那 151 秒是空白，
+重启后 saga 从原地继续，最后确认。把消费组重置到最早位点重放全部 160 条事件：80 个 `OrderPlaced` 全部被识别为重复，
+没有一个 saga 跑了两次。
+→ [docs/illustrated/04-the-saga.md](docs/illustrated/04-the-saga.md)（英文）
 
 **第 03 章（M3）。** 卖同一个 SKU：Redis Lua 闸门卖完 1 万件只要 1.2–1.5 秒，Postgres 行锁要 6.3–7.8 秒（24 轮，全部没有超卖）。
 服务的第一版在一万人同时抢购时有 45% 的请求报错，还有库存卡在中间，买家却被告知"卖完了"。加了一道同时处理 64 个预占的
@@ -137,7 +146,7 @@ docs/                 架构文档和图解
 | M1 | 商品目录 + 网关认证（Keycloak）+ 两级缓存 + OpenSearch | 完成 |
 | M2 | 订单：分片 Postgres、outbox、Debezium → Kafka、幂等键、CQRS 读模型 | 完成 |
 | M3 | 库存：多仓库存、Redis 闸门 + Postgres 事实、对账、舱壁、四种方案压测 | 完成 |
-| M4 | 履约：Temporal Saga、配送承诺、支付故障注入 | |
+| M4 | 履约：Temporal Saga、配送承诺、支付故障注入 | 完成 |
 | M5 | 物流追踪：快递事件洪峰、DynamoDB、SSE | |
 | M6 | 前端：商城、实时地图、运维大盘 | |
 | M7 | 韧性与可观测：降载、熔断、链路追踪、SLO 大盘、混沌实验 | |

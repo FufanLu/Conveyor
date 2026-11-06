@@ -21,7 +21,9 @@ final class OrderRequests {
             String currency,
             String shipToRegion,
             long version,
-            Instant placedAt) {
+            Instant placedAt,
+            String statusReason,
+            Instant promisedDelivery) {
 
         record Line(String sku, int quantity, long unitPriceCents, long lineTotalCents) {}
 
@@ -36,9 +38,13 @@ final class OrderRequests {
                     o.currency(),
                     o.shipToRegion(),
                     o.version(),
-                    o.placedAt());
+                    o.placedAt(),
+                    o.statusReason(),
+                    o.promisedDelivery());
         }
     }
 
     record OrderPage(List<OrderResponse> orders, String next) {}
+
+    record StatusChangeRequest(String status, String reason, Instant promisedDelivery) {}
 }

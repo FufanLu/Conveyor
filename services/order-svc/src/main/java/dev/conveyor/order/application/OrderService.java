@@ -60,6 +60,14 @@ public class OrderService {
         return store.placeIdempotently(order, command.idempotencyKey(), requestHash(items, command.shipToRegion()));
     }
 
+    public OrderStore.StatusChange changeStatus(
+            OrderId id, dev.conveyor.order.domain.OrderStatus to, String reason, java.time.Instant promised) {
+        if (!to.terminal()) {
+            throw new InvalidOrderException("status must be one of CONFIRMED, REJECTED, PAYMENT_FAILED, CANCELLED");
+        }
+        return store.changeStatus(id, to, reason, promised);
+    }
+
     public Optional<Order> find(OrderId id) {
         return store.find(id);
     }

@@ -1,6 +1,17 @@
 package dev.conveyor.order.domain;
 
-/** M2 creates orders as PLACED; the fulfillment saga (M4) moves them on. */
+/**
+ * PLACED when accepted; the fulfillment saga (fulfillment-svc) then moves it to exactly one
+ * terminal state.
+ */
 public enum OrderStatus {
-    PLACED
+    PLACED,
+    CONFIRMED,
+    REJECTED,
+    PAYMENT_FAILED,
+    CANCELLED;
+
+    public boolean terminal() {
+        return this != PLACED;
+    }
 }

@@ -28,7 +28,17 @@ message OrderEvent {
 
   oneof body {
     OrderPlaced placed = 10;
+    OrderStatusChanged status_changed = 11;
   }
+}
+
+// The fulfillment saga moved the order out of PLACED. Terminal: CONFIRMED, REJECTED (no stock),
+// PAYMENT_FAILED, CANCELLED (e.g. the hold expired or payment never completed).
+message OrderStatusChanged {
+  string status = 1;
+  string reason = 2;
+  // Set when CONFIRMED.
+  google.protobuf.Timestamp promised_delivery = 3;
 }
 
 message OrderPlaced {

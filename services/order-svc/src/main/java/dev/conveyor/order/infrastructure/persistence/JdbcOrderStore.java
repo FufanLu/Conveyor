@@ -125,6 +125,44 @@ class JdbcOrderStore implements OrderStore {
     }
 
     @Override
+    public StatusChange changeStatus(OrderId id, OrderStatus to, String reason, java.time.Instant promised) {
+        ShardGroup db = router.group(id.shard());
+        String t = ShardRouter.suffix(id.shard());
+        return db.tx().execute(tx -> {
+            int updated = db.jdbc()
+                    .sql("UPDATE orders_" + t
+                            + " SET status = :to, status_reason = :reason, promised_delivery = :promised,"
+                            + " version = version + 1, updated_at = now() WHERE order_id = :id AND status = 'PLACED'")
+                    .param("to", to.name())
+                    .param("reason", reason)
+                    .param("promised", promised == null ? null : Timestamp.from(promised))
+                    .param("id", id.value())
+                    .update();
+            Optional<Order> now = find(id);
+            if (now.isEmpty()) {
+                return new StatusChange.NotFound();
+            }
+            Order order = now.get();
+            if (updated == 0) {
+                return order.status() == to ? new StatusChange.AlreadyThere(order) : new StatusChange.Conflict(order);
+            }
+            UUID eventId = RequestIds.uuidV7(clock);
+            db.jdbc()
+                    .sql("INSERT INTO outbox (id, aggregatetype, aggregateid, type, payload)"
+                            + " VALUES (:id, :aggregate, :order, 'OrderStatusChanged', :payload)")
+                    .param("id", eventId)
+                    .param("aggregate", AGGREGATE)
+                    .param("order", id.toString())
+                    .param(
+                            "payload",
+                            OrderEvents.statusChanged(order, eventId, clock.instant())
+                                    .toByteArray())
+                    .update();
+            return new StatusChange.Changed(order);
+        });
+    }
+
+    @Override
     public Optional<Order> find(OrderId id) {
         ShardGroup db = router.group(id.shard());
         String t = ShardRouter.suffix(id.shard());
@@ -182,7 +220,9 @@ class JdbcOrderStore implements OrderStore {
             String currency,
             String region,
             long version,
-            java.time.Instant placedAt) {
+            java.time.Instant placedAt,
+            String statusReason,
+            java.time.Instant promisedDelivery) {
 
         static OrderRow map(java.sql.ResultSet rs, int n) throws java.sql.SQLException {
             return new OrderRow(
@@ -193,7 +233,11 @@ class JdbcOrderStore implements OrderStore {
                     rs.getString("currency").trim(),
                     rs.getString("ship_to_region"),
                     rs.getLong("version"),
-                    rs.getTimestamp("placed_at").toInstant());
+                    rs.getTimestamp("placed_at").toInstant(),
+                    rs.getString("status_reason"),
+                    rs.getTimestamp("promised_delivery") == null
+                            ? null
+                            : rs.getTimestamp("promised_delivery").toInstant());
         }
 
         Order toOrder(List<OrderLine> lines) {
@@ -206,7 +250,9 @@ class JdbcOrderStore implements OrderStore {
                     currency,
                     region,
                     version,
-                    placedAt);
+                    placedAt,
+                    statusReason,
+                    promisedDelivery);
         }
     }
 }

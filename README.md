@@ -10,11 +10,12 @@ back to the customer.
 Java 25 and Spring Boot 4.1 microservices. Each piece of middleware is chosen so it maps onto an
 AWS managed service: the same design runs on a laptop with Docker and on AWS.
 
-> **Status: M3 is done.** On top of the platform (M0), the catalog (M1: two-level cache, Bloom
-> filter, OpenSearch, guarded writes) and orders (M2: 16 shards, idempotency, outbox → Debezium
-> → Kafka, CQRS read model), inventory-svc now holds stock for the order saga over gRPC: a Redis
-> Lua gate for the contended counter, Postgres for the durable facts, a reconciler between them,
-> and a bulkhead in front. See [Roadmap](#roadmap).
+> **Status: M4 is done.** On top of the platform (M0), the catalog (M1: two-level cache, Bloom
+> filter, OpenSearch, guarded writes), orders (M2: 16 shards, idempotency, outbox → Debezium →
+> Kafka, CQRS read model) and inventory (M3: Redis Lua gate, Postgres facts, reconciler,
+> bulkhead), every placed order now runs a Temporal saga: reserve, authorize, commit, promise a
+> delivery date, confirm, with a compensation for each step and a durable 15-minute payment
+> window. See [Roadmap](#roadmap).
 
 ## Architecture
 
@@ -64,8 +65,11 @@ The interesting parts, by milestone:
   contention-free Postgres inserts reaches 6.5–8.1k units/s at p99 6–90 ms. inventory-svc uses
   the last, with a reconciler that repairs stable drift and rebuilds counters after a Redis
   restart.
-- **Order saga (M4).** Reserve stock, authorize payment, allocate an FC, ship. Any step can fail
-  and is compensated. An unpaid order is cancelled by a durable Temporal timer, not a delay queue.
+- **Order saga (M4, built).** `OrderPlaced` starts one Temporal workflow per order (workflow id =
+  order id, so a replayed topic starts nothing twice). Reserve → authorize → commit → delivery
+  promise → confirm. A decline releases the stock, and a late commit voids the payment and then
+  releases the stock. A PENDING payment waits on a durable timer, which kept running through a
+  `kill -9` of the worker.
 - **Outbox + CDC (M2, built).** The order row, its idempotency key and its event commit in one
   local transaction on the customer's shard; Debezium publishes the event from the WAL as
   Protobuf bytes. Writes keep working while CDC is down.
@@ -81,6 +85,13 @@ The interesting parts, by milestone:
 ## Measured so far
 
 Every number in this repository comes from running the code.
+
+**Chapter 04 (M4).** Four orders, four saga endings: confirmed, rejected for stock, payment
+failed (the hold released before the customer was told), and pending until a callback. A
+`kill -9` of the worker during a 150 s payment wait left a 151-second gap in the Temporal event
+history, and the saga resumed from where it stopped. Replaying all 160 events on the topic
+refused all 80 `OrderPlaced` events as duplicates, and no saga ran twice.
+→ [docs/illustrated/04-the-saga.md](docs/illustrated/04-the-saga.md)
 
 **Chapter 03 (M3).** Selling one SKU: a Redis Lua gate sold 10,000 units in 1.2–1.5 s, against
 6.3–7.8 s with a Postgres row lock (24 runs, all without oversell). The first version of the service
@@ -157,7 +168,7 @@ docs/                 architecture and the illustrated walkthroughs
 | M1 | Catalog + gateway auth (Keycloak) + two-level cache + OpenSearch | done |
 | M2 | Orders: sharded Postgres, outbox, Debezium → Kafka, idempotency keys, CQRS read model | done |
 | M3 | Inventory: multi-FC stock, Redis gate + Postgres facts, reconciliation, bulkhead, 4-way benchmark | done |
-| M4 | Fulfillment: Temporal saga, delivery promise, payment failure injection | |
+| M4 | Fulfillment: Temporal saga, delivery promise, payment failure injection | done |
 | M5 | Tracking: courier event firehose, DynamoDB, SSE | |
 | M6 | Web: storefront, live map, ops console | |
 | M7 | Resilience and observability: shedding, circuit breakers, tracing, SLO dashboards, chaos | |
