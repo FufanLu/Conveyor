@@ -59,6 +59,11 @@ management:
     logging:
       export:
         enabled: false
+    # Metrics stay with Prometheus (pull); the OpenTelemetry starter would also push them over
+    # OTLP, which Jaeger does not accept (the first end-to-end run logged a failure a minute).
+    metrics:
+      export:
+        enabled: false
   metrics:
     distribution:
       # Export real histogram buckets so P99 is computed server-side with histogram_quantile(),

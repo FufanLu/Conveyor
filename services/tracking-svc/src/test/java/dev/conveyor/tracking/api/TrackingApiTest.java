@@ -220,12 +220,15 @@ class TrackingApiTest {
             assertThat(counter("tracking.persist.events", "duplicate") - duplicatesBefore)
                     .isEqualTo(20);
         });
-        getShipment(id, TestJwts.tokenForSubject("user-ann"))
-                .expectBody()
-                .jsonPath("$.lastSeq")
-                .isEqualTo(20)
-                .jsonPath("$.lat")
-                .isEqualTo(40.72);
+        // The latest position is coalesced (one write per shipment per interval, 1 s here): the
+        // newest one lands when the flusher runs, not with the batch.
+        await().atMost(Duration.ofSeconds(10))
+                .untilAsserted(() -> getShipment(id, TestJwts.tokenForSubject("user-ann"))
+                        .expectBody()
+                        .jsonPath("$.lastSeq")
+                        .isEqualTo(20)
+                        .jsonPath("$.lat")
+                        .isEqualTo(40.72));
     }
 
     @Test

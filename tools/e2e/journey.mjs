@@ -1,3 +1,4 @@
+// Station names are uppercased by CSS; textContent keeps the source case, so matches are /i.
 // The whole journey in a real browser against the real stack (no demo mode):
 //   alice signs in on Keycloak's own page, searches, buys, watches the saga confirm the order,
 //   a simulated courier delivers it while the page follows over SSE; a declined card ends on
@@ -83,7 +84,7 @@ try {
   const orderId = await buy(page, "kettle", (p) => !p.endsWith(".13") && !p.endsWith(".37"));
   const placedAt = Date.now();
   await page.waitForFunction(
-    () => /READY AT FC|CONFIRMED/.test(document.querySelector(".platform dd")?.textContent ?? ""),
+    () => /READY AT FC|CONFIRMED/i.test(document.querySelector(".platform dd")?.textContent ?? ""),
     { timeout: 120000 },
   );
   step("saga confirmed the order", { orderId, placedToConfirmedMs: Date.now() - placedAt, now: await nowSign(page) });
@@ -99,7 +100,7 @@ try {
   );
   step("courier positions arriving over SSE", { now: await nowSign(page) });
   await page.screenshot({ path: `${OUT}/2-out-for-delivery.png`, fullPage: true });
-  await page.waitForFunction(() => /DELIVERED/.test(document.querySelector(".platform dd")?.textContent ?? ""), {
+  await page.waitForFunction(() => /DELIVERED/i.test(document.querySelector(".platform dd")?.textContent ?? ""), {
     timeout: 120000,
   });
   step("delivered, seen live on the order page");
@@ -108,7 +109,7 @@ try {
 
   // 2. a declined card: the seeded catalog has items priced at .13
   await buy(page, "Deluxe Camping Lantern 248", (p) => p.endsWith(".13"));
-  await page.waitForFunction(() => /PAYMENT FAILED/.test(document.querySelector(".platform dd")?.textContent ?? ""), {
+  await page.waitForFunction(() => /PAYMENT FAILED/i.test(document.querySelector(".platform dd")?.textContent ?? ""), {
     timeout: 120000,
   });
   step("declined card ended on the failure branch");

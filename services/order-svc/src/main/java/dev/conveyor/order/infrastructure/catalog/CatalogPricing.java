@@ -9,6 +9,8 @@ import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerConfig;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import io.github.resilience4j.micrometer.tagged.TaggedCircuitBreakerMetrics;
+import io.micrometer.context.ContextExecutorService;
+import io.micrometer.context.ContextSnapshotFactory;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.net.http.HttpClient;
 import java.util.ArrayList;
@@ -47,8 +49,13 @@ class CatalogPricing implements Pricing, AutoCloseable {
 
     private final RestClient http;
     private final CatalogProperties properties;
-    private final ExecutorService lookups = Executors.newThreadPerTaskExecutor(
-            Thread.ofVirtual().name("catalog-quote-", 0).factory());
+    // The lookups run on their own virtual threads; wrapping the executor carries the caller's
+    // observation (trace) context into them, so catalog calls appear in the order's trace. The
+    // first end-to-end run showed the trace jumping from order-svc straight to Kafka.
+    private final ExecutorService lookups = ContextExecutorService.wrap(
+            Executors.newThreadPerTaskExecutor(
+                    Thread.ofVirtual().name("catalog-quote-", 0).factory()),
+            ContextSnapshotFactory.builder().build()::captureAll);
 
     private final CircuitBreaker breaker;
 

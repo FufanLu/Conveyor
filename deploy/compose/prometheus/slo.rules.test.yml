@@ -22,8 +22,12 @@ tests:
               summary: Checkout is failing or shedding 5% of orders (budget 0.1 %).
               runbook: docs/runbooks/checkout-availability.md
       - eval_time: 70m
-        alertname: CheckoutErrorBudgetBurnSlow
-        exp_alerts: []   # the 6 h window has not seen enough yet
+        alertname: CheckoutErrorBudgetBurnSlow   # 5 % is also far beyond the 6x slow burn
+        exp_alerts:
+          - exp_labels: { severity: ticket, slo: checkout-availability }
+            exp_annotations:
+              summary: Checkout errors have burned the budget 6x too fast for 6 hours.
+              runbook: docs/runbooks/checkout-availability.md
 
   # Shedding counts against checkout too: 3 % of orders shed.
   - interval: 1m
