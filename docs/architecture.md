@@ -151,6 +151,26 @@ Details and measurements: [illustrated chapter 03](illustrated/03-ten-thousand-b
 - **Overload**: at most 64 Reserve calls in flight per instance, 500 ms queue, then
   `RESOURCE_EXHAUSTED` before anything is claimed; handlers on virtual threads.
 
+## Overload, failure and visibility (built in M7)
+
+- **Edge admission** (gateway `LoadSheddingFilter`): one adaptive concurrency limit for all
+  upstream routes, learned from latency (short RTT against a no-load RTT that drifts up by e
+  per 30 s). Search may use 40 % of it, product pages 60 %, orders 100 %. Over-limit requests
+  get 503, `Retry-After: 1`, before security or routing run. SSE streams are not counted.
+- **Rate limits**: Spring Cloud Gateway `RequestRateLimiter` on Redis, per customer (token
+  subject) or address. It fails open, so Redis is not part of the gateway's health.
+- **Circuit breaker**: order-svc → catalog pricing (Resilience4j). It opens at 50 % failed or
+  slow calls in the last 50 (at least 20) and stays open for 5 s; while open, orders are refused
+  at once.
+- **SLIs and SLOs**: `gateway_edge_requests_seconds{priority,outcome}` with a 300 ms bucket. The
+  objectives are checkout 99.9 % available and 99 % under 300 ms, and browse 99 %. Alerts use
+  multi-window burn rates (14.4× over 1 h and 5 m pages; 6× over 6 h and 30 m opens a ticket).
+  The rules and their promtool tests live in `deploy/compose/prometheus/`, and the runbook in
+  `docs/runbooks/`.
+- **Tracing**: OpenTelemetry over OTLP to Jaeger. HTTP, gRPC and Kafka are observed, and a W3C
+  `traceparent` rides in the outbox row into a Kafka header, so one trace crosses the WAL.
+  Temporal activities still start their own traces.
+
 ## Consistency choices
 
 | Decision | Choice | Why |

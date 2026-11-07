@@ -10,13 +10,15 @@ back to the customer.
 Java 25 and Spring Boot 4.1 microservices. Each piece of middleware is chosen so it maps onto an
 AWS managed service: the same design runs on a laptop with Docker and on AWS.
 
-> **Status: M6 is done.** On top of the platform (M0), the catalog (M1: two-level cache, Bloom
+> **Status: M7 is done.** On top of the platform (M0), the catalog (M1: two-level cache, Bloom
 > filter, OpenSearch, guarded writes), orders (M2: 16 shards, idempotency, outbox → Debezium →
 > Kafka, CQRS read model) and inventory (M3: Redis Lua gate, Postgres facts, reconciler,
 > bulkhead), every placed order now runs a Temporal saga: reserve, authorize, commit, promise a
 > delivery date, confirm, with a compensation for each step and a durable 15-minute payment
 > window. tracking-svc (M5) takes the courier firehose into Kafka, stores it in DynamoDB and
 > pushes it to browsers over SSE. The web app (M6) draws the whole journey as a transit map.
+> M7 makes it degrade on purpose: adaptive admission at the edge, a circuit breaker, SLOs with
+> burn-rate alerts, traces through the outbox, and a browser driving the full stack in CI.
 > See [Roadmap](#roadmap).
 
 ## Architecture
@@ -91,6 +93,15 @@ The interesting parts, by milestone:
 ## Measured so far
 
 Every number in this repository comes from running the code.
+
+**Chapter 07 (M7).** An upstream that serves 400 req/s was offered 1,200. Without protection,
+every request timed out and goodput fell to 0. With the gateway's adaptive admission, goodput
+held at 390 req/s and 99.8 % of orders succeeded at p99 125 ms; searches were shed first. Two
+earlier versions of the limit failed on the runner and are documented. A frozen catalog-svc
+opened the order service's circuit breaker after 20 slow calls, and orders then failed in 17 ms
+instead of 1 s. A browser signs in on Keycloak, buys, and watches the saga and the courier, and
+the order's trace crosses five services, through the outbox.
+→ [docs/illustrated/07-when-everything-is-too-much.md](docs/illustrated/07-when-everything-is-too-much.md)
 
 **Chapter 06 (M6).** The web app draws the platform as a transit network:
 - An order is a line, and saga steps and courier scans are its stations.
@@ -196,5 +207,5 @@ docs/                 architecture and the illustrated walkthroughs
 | M4 | Fulfillment: Temporal saga, delivery promise, payment failure injection | done |
 | M5 | Tracking: courier event firehose, DynamoDB, SSE | done |
 | M6 | Web: storefront, live map, ops console | done |
-| M7 | Resilience and observability: shedding, circuit breakers, tracing, SLO dashboards, chaos | |
+| M7 | Resilience and observability: shedding, circuit breakers, tracing, SLO dashboards, chaos | done |
 | M8 | Load test and delivery: Prime Day scenario, Helm on kind, AWS CDK | |

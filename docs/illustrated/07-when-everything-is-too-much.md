@@ -175,7 +175,91 @@ row from the WAL, so the trace ended at the database. order-svc now writes the c
 
 ## 6. The whole thing in a browser
 
-<!-- filled in from the e2e run -->
+M6 shipped with its screenshots taken in demo mode. `tools/e2e/run.sh` now runs everything on
+one 16 GB runner: all the compose infrastructure, the eight services exporting traces, the
+Debezium connectors, and the production web build. Then a real browser drives it:
+
+```
+[ 6.0 s] alice signed in through Keycloak
+[ 7.5 s] order placed {"orderId":"033YBGVJQ0000","price":"$71.06","clickToOrderPageMs":487}
+[10.1 s] saga confirmed the order {"placedToConfirmedMs":2532,"now":"Ready at FC"}
+[15.4 s] courier positions arriving over SSE {"now":"Out for delivery"}
+[45.4 s] delivered, seen live on the order page
+[46.7 s] order placed {"orderId":"033YBNMXF0000","price":"$32.13","clickToOrderPageMs":135}
+[48.0 s] declined card ended on the failure branch
+[51.3 s] ops signed in through Keycloak
+```
+
+The sign-in is Keycloak's own login page with PKCE, not a token minted by the test. The 2.5 s
+between placing the order and seeing it confirmed is the full path: order-svc's transaction,
+the WAL, Debezium, Kafka, the Temporal saga (reserve over gRPC, authorize, commit), the status
+write back through the outbox, and the page's poll. The $32.13 order is a real seeded catalog
+item whose price ends in .13, so payment-mock declines it.
+
+![The order delivered, on the real stack](img/07-delivered-real-stack.webp)
+
+**The order's trace**, read back from Jaeger's API: one trace, 22 spans, five services.
+
+```
+  +     0.0 ms      47.5 ms  gateway          http post
+  +     6.0 ms       1.1 ms  gateway          evalsha                    ← the Redis rate limiter
+  +    11.5 ms      33.6 ms  order-svc        http post /v1/orders
+  +    17.9 ms      19.4 ms  order-svc        http get                   ← pricing
+  +    21.5 ms      14.2 ms  catalog-svc      http get /v1/products/{sku}
+  +   102.5 ms      23.2 ms  tracking-svc     orders.events process      ← after the WAL hop
+  +   105.0 ms      16.7 ms  fulfillment-svc  orders.events process
+  +   105.4 ms      18.8 ms  order-svc        orders.events process      ← its own read model
+```
+
+The first run of this trace had no catalog span. The pricing lookups run on their own
+virtual threads, and the trace context did not follow them. The executor is now wrapped with
+`ContextExecutorService`. The three consumers 100 ms later are in the same trace only because
+of the `traceparent` that travels through the outbox row. The saga's own activities are not in
+it: Temporal workflows replay, and their activity calls start new traces. Connecting those is
+left for later.
+
+**Chaos.** catalog-svc was frozen with `SIGSTOP` while alice kept ordering five times a
+second:
+
+```
+before: breaker state="closed"; one order: 201 0.040751
+order 1:  503 1.040441  breaker state="closed"      ← each order waits out the pricing budget
+order 15: 503 1.019829  breaker state="closed"
+order 20: 503 0.017537  breaker state="open"        ← 20 slow calls: open, refused in 17 ms
+order 35: 503 0.014515  breaker state="open"
+order 40: 503 1.018145  breaker state="half_open"   ← 5 s later, trial calls; catalog still frozen
+catalog-svc resumed
+after 0.1 s: 201 0.089129  breaker state="half_open"
+after 0.7 s: 201 0.027128  breaker state="open"     ← trials made while frozen failed: reopen
+after 1.2 s: 503 0.015345  breaker state="open"
+after 5.7 s: 201 0.025195  breaker state="half_open"
+after 8.0 s: 201 0.030830  breaker state="closed"
+```
+
+After the 20th slow call, orders were refused in 15–19 ms instead of 1 s. The breaker reopened
+once after catalog came back, because its trial calls had partly run while catalog was still
+frozen. That is correct, and the first version of the script misread it as a failure. Eight
+seconds after the resume, orders were going through again.
+
+![The ops view on the real stack](img/07-ops-real-stack.webp)
+
+**What the browser runs found.** Four runs were needed before the journey passed end to end:
+
+- Run 1 waited for "READY AT FC" in an element whose CSS uppercases "Ready at FC". The saga had
+  confirmed the order in 1.2 s; the test could not see it. Matches are case-insensitive now.
+  The same run showed the trace missing catalog, and services pushing metrics over OTLP that
+  Jaeger rejects once a minute.
+- Run 2 waited for the network to go idle on a page that holds an SSE stream open.
+- Run 3 passed, and showed the ops page still "Connecting" seconds after it loaded. The ops map
+  stream sends nothing until a courier moves, so Spring never committed the response headers.
+  Every stream now opens with a comment line, and the journey asserts the stream goes live.
+  Run 4 passed that assertion, but the page took 18 s to show "Live", close to the 15 s
+  keepalive. Something between tracking-svc and the browser (the gateway, or the preview
+  proxy) still holds back the opening comment. This is open.
+- A CI run of `TrackingApiTest` in between found a real gap in the stream itself. A report the
+  live consumer published just before a browser subscribed, but that the persister had not
+  stored yet when the history was read, reached the browser through neither path. The live hub
+  now replays each shipment's last 16 reports to new subscribers.
 
 ## Reproduce
 
