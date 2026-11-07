@@ -1,0 +1,10 @@
+apiVersion: v2
+name: conveyor-deps
+description: >-
+  Development-grade middleware for Conveyor on a local cluster (kind): Postgres x2, Redis,
+  Kafka (KRaft), Debezium Connect, Keycloak, OpenSearch, Temporal (dev server), DynamoDB Local.
+  Single replicas on ephemeral storage, same images and settings as deploy/compose. In AWS these
+  are managed services (see deploy/cdk); this chart is never meant for production.
+type: application
+version: 0.8.0
+appVersion: "0.8.0"

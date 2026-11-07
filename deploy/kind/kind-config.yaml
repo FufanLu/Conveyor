@@ -1,0 +1,10 @@
+# One node is enough for a smoke test and a local demo; the gateway is reachable on the host
+# through `kubectl port-forward svc/gateway 8080` (or the NodePort mapping below).
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+  - role: control-plane
+    extraPortMappings:
+      - containerPort: 30080
+        hostPort: 30080
+        protocol: TCP

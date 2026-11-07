@@ -1,0 +1,43 @@
+# Registers the Debezium outbox connectors once order-svc has created the outbox tables and the
+# publication. The Job retries until Connect accepts both and reports them RUNNING. The configs
+# are compose's own (deploy/compose/connect), loaded into the ConfigMap by deploy/kind/up.sh.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: register-connectors
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  backoffLimit: 20
+  template:
+    spec:
+      restartPolicy: OnFailure
+      enableServiceLinks: false
+      containers:
+        - name: register
+          image: {{ .Values.smoke.image }}
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -e
+              base={{ .Values.endpoints.connect }}/connectors
+              until curl -fs {{ .Values.endpoints.connect }}/ > /dev/null; do sleep 3; done
+              until curl -fs http://order-svc:8082/actuator/health/readiness > /dev/null; do sleep 3; done
+              for f in /setup/*.json; do
+                name=$(basename "$f" .json)
+                curl -fsS -X PUT -H 'Content-Type: application/json' --data @"$f" "$base/$name/config" > /dev/null
+              done
+              sleep 15
+              for f in /setup/*.json; do
+                name=$(basename "$f" .json)
+                status=$(curl -fsS "$base/$name/status")
+                echo "$status"
+                echo "$status" | grep -q '"state":"FAILED"' && exit 1
+              done
+              echo registered
+          volumeMounts:
+            - { name: connectors, mountPath: /setup, readOnly: true }
+      volumes:
+        - name: connectors
+          configMap: { name: conveyor-connectors }

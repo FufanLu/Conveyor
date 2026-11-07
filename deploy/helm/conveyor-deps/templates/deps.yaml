@@ -1,0 +1,67 @@
+{{- range $name, $d := .Values.deps }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels: { app.kubernetes.io/name: {{ $name }}, app.kubernetes.io/part-of: conveyor-deps }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector:
+    matchLabels: { app.kubernetes.io/name: {{ $name }} }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: {{ $name }}, app.kubernetes.io/part-of: conveyor-deps }
+    spec:
+      # Kubernetes would inject KAFKA_PORT, POSTGRES_0_PORT, ... for every Service; the Kafka
+      # image reads any KAFKA_* variable as broker configuration and refuses to start.
+      enableServiceLinks: false
+      containers:
+        - name: {{ $name }}
+          image: {{ $d.image }}
+          {{- with $d.args }}
+          args: {{ toJson . }}
+          {{- end }}
+          ports:
+            {{- range $pname, $port := $d.ports }}
+            - { name: {{ $pname }}, containerPort: {{ $port }} }
+            {{- end }}
+          {{- with $d.env }}
+          env:
+            {{- range $k, $v := . }}
+            - { name: {{ $k | quote }}, value: {{ $v | quote }} }
+            {{- end }}
+          {{- end }}
+          readinessProbe:
+            tcpSocket: { port: {{ first (keys $d.ports | sortAlpha) }} }
+            periodSeconds: 5
+          resources:
+            requests: { cpu: 50m, memory: {{ $d.memory }} }
+            limits: { memory: {{ $d.memory }} }
+          {{- with $d.configMaps }}
+          volumeMounts:
+            {{- range . }}
+            - { name: {{ .name }}, mountPath: {{ .mountPath }}, readOnly: true }
+            {{- end }}
+          {{- end }}
+      {{- with $d.configMaps }}
+      volumes:
+        {{- range . }}
+        - name: {{ .name }}
+          configMap: { name: {{ .name }} }
+        {{- end }}
+      {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels: { app.kubernetes.io/name: {{ $name }}, app.kubernetes.io/part-of: conveyor-deps }
+spec:
+  selector: { app.kubernetes.io/name: {{ $name }} }
+  ports:
+    {{- range $pname, $port := $d.ports }}
+    - { name: {{ $pname }}, port: {{ $port }}, targetPort: {{ $port }} }
+    {{- end }}
+{{- end }}

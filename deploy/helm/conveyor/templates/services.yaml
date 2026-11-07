@@ -1,0 +1,117 @@
+{{- $root := . }}
+{{- range $name, $s := .Values.services }}
+{{- $stateful := hasKey $root.Values.statefulWorkers $name }}
+---
+apiVersion: apps/v1
+kind: {{ if $stateful }}StatefulSet{{ else }}Deployment{{ end }}
+metadata:
+  name: {{ $name }}
+  labels: { app.kubernetes.io/name: {{ $name }}, app.kubernetes.io/part-of: conveyor }
+spec:
+  {{- if not $s.hpa }}
+  replicas: {{ $s.replicas }}
+  {{- end }}
+  {{- if $stateful }}
+  serviceName: {{ $name }}
+  podManagementPolicy: Parallel
+  {{- end }}
+  selector:
+    matchLabels: { app.kubernetes.io/name: {{ $name }} }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: {{ $name }}, app.kubernetes.io/part-of: conveyor }
+    spec:
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: {{ $name }}
+          image: "{{ $root.Values.image.repository }}/{{ $name }}:{{ $root.Values.image.tag }}"
+          imagePullPolicy: {{ $root.Values.image.pullPolicy }}
+          ports:
+            - { name: http, containerPort: {{ $s.port }} }
+            {{- with $s.grpcPort }}
+            - { name: grpc, containerPort: {{ . }} }
+            {{- end }}
+          env:
+            - { name: SERVER_PORT, value: {{ $s.port | quote }} }
+            - { name: SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUERURI, value: {{ $root.Values.endpoints.issuer | quote }} }
+            {{- range $k, $v := $root.Values.commonEnv }}
+            - { name: {{ $k }}, value: {{ $v | quote }} }
+            {{- end }}
+            {{- range $k, $v := $s.env }}
+            - { name: {{ $k }}, value: {{ tpl $v $root | quote }} }
+            {{- end }}
+            {{- if $stateful }}
+            - name: {{ index $root.Values.statefulWorkers $name }}
+              valueFrom:
+                fieldRef: { fieldPath: "metadata.labels['apps.kubernetes.io/pod-index']" }
+            {{- end }}
+          # Startup can take a minute (Flyway migrations, the 100,000-row seeds, Kafka joins);
+          # liveness and readiness only start counting once the startup probe passed.
+          startupProbe:
+            httpGet: { path: /actuator/health/liveness, port: http }
+            periodSeconds: 5
+            failureThreshold: 60
+          livenessProbe:
+            httpGet: { path: /actuator/health/liveness, port: http }
+            periodSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet: { path: /actuator/health/readiness, port: http }
+            periodSeconds: 5
+            failureThreshold: 2
+          lifecycle:
+            # Let endpoints drop the pod before Spring starts its graceful shutdown.
+            preStop: { sleep: { seconds: 5 } }
+          resources:
+            requests: { cpu: {{ $s.cpu }}, memory: {{ $s.memory }} }
+            limits: { memory: {{ $s.memory }} }
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels: { app.kubernetes.io/name: {{ $name }}, app.kubernetes.io/part-of: conveyor }
+spec:
+  selector: { app.kubernetes.io/name: {{ $name }} }
+  ports:
+    - { name: http, port: {{ $s.port }}, targetPort: http }
+    {{- with $s.grpcPort }}
+    - { name: grpc, port: {{ . }}, targetPort: grpc }
+    {{- end }}
+{{- if $s.hpa }}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ $name }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: {{ if $stateful }}StatefulSet{{ else }}Deployment{{ end }}
+    name: {{ $name }}
+  minReplicas: {{ $s.hpa.min }}
+  maxReplicas: {{ $s.hpa.max }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target: { type: Utilization, averageUtilization: 70 }
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300   # do not flap after a deal's first minute
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ $name }}
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: {{ $name }} }
+{{- end }}
+{{- end }}

@@ -1,0 +1,106 @@
+image:
+  repository: conveyor      # conveyor/<service>:<tag>; kind loads them locally
+  tag: dev
+  pullPolicy: IfNotPresent
+
+# Where the middleware lives. On kind: the conveyor-deps chart's Services. In AWS: the managed
+# endpoints from the CDK stack's outputs.
+endpoints:
+  issuer: http://keycloak:8080/realms/conveyor
+  kafka: kafka:9092
+  redis: redis
+  opensearch: http://opensearch:9200
+  pg0: jdbc:postgresql://postgres-0:5432
+  pg1: jdbc:postgresql://postgres-1:5432
+  temporal: temporal:7233
+  dynamodb: http://dynamodb:8000
+  connect: http://connect:8083
+
+# Settings every service gets.
+commonEnv:
+  CONVEYOR_TRACING_EXPORT: "false"
+
+services:
+  gateway:
+    port: 8080
+    replicas: 2
+    memory: 512Mi
+    cpu: 200m
+    hpa: { min: 2, max: 6 }
+    env:
+      SPRING_DATA_REDIS_HOST: "{{ .Values.endpoints.redis }}"
+      CONVEYOR_UPSTREAMS_CATALOG: http://catalog-svc:8081
+      CONVEYOR_UPSTREAMS_ORDER: http://order-svc:8082
+      CONVEYOR_UPSTREAMS_FULFILLMENT: http://fulfillment-svc:8084
+      CONVEYOR_UPSTREAMS_TRACKING: http://tracking-svc:8085
+  catalog-svc:
+    port: 8081
+    replicas: 2
+    memory: 640Mi
+    cpu: 200m
+    hpa: { min: 2, max: 6 }
+    env:
+      SPRING_DATASOURCE_URL: "{{ .Values.endpoints.pg0 }}/catalog"
+      SPRING_DATA_REDIS_HOST: "{{ .Values.endpoints.redis }}"
+      CONVEYOR_OPENSEARCH_URL: "{{ .Values.endpoints.opensearch }}"
+  order-svc:
+    port: 8082
+    replicas: 2
+    memory: 640Mi
+    cpu: 200m
+    hpa: { min: 2, max: 8 }
+    env:
+      CONVEYOR_ORDER_DATABASES_PG0_URL: "{{ .Values.endpoints.pg0 }}/orders"
+      CONVEYOR_ORDER_DATABASES_PG1_URL: "{{ .Values.endpoints.pg1 }}/orders"
+      CONVEYOR_CATALOG_URL: http://catalog-svc:8081
+      CONVEYOR_OPENSEARCH_URL: "{{ .Values.endpoints.opensearch }}"
+      SPRING_KAFKA_BOOTSTRAPSERVERS: "{{ .Values.endpoints.kafka }}"
+      # One id generator per pod: worker id from the pod's ordinal is a StatefulSet feature, so
+      # order-svc runs as a StatefulSet (see statefulWorkers below).
+  inventory-svc:
+    port: 8083
+    grpcPort: 9083
+    replicas: 2
+    memory: 640Mi
+    cpu: 200m
+    hpa: { min: 2, max: 6 }
+    env:
+      SPRING_DATASOURCE_URL: "{{ .Values.endpoints.pg0 }}/inventory"
+      SPRING_DATA_REDIS_HOST: "{{ .Values.endpoints.redis }}"
+  fulfillment-svc:
+    port: 8084
+    replicas: 2
+    memory: 512Mi
+    cpu: 200m
+    hpa: { min: 2, max: 6 }
+    env:
+      SPRING_KAFKA_BOOTSTRAPSERVERS: "{{ .Values.endpoints.kafka }}"
+      CONVEYOR_TEMPORAL_TARGET: "{{ .Values.endpoints.temporal }}"
+      CONVEYOR_INVENTORY_TARGET: inventory-svc:9083
+      CONVEYOR_PAYMENT_URL: http://payment-mock:8086
+      CONVEYOR_ORDER_URL: http://order-svc:8082
+      CONVEYOR_FULFILLMENT_CALLBACK_URL: http://fulfillment-svc:8084
+  tracking-svc:
+    port: 8085
+    replicas: 2
+    memory: 640Mi
+    cpu: 200m
+    hpa: { min: 2, max: 8 }
+    env:
+      SPRING_KAFKA_BOOTSTRAPSERVERS: "{{ .Values.endpoints.kafka }}"
+      CONVEYOR_DYNAMODB_URL: "{{ .Values.endpoints.dynamodb }}"
+  payment-mock:
+    port: 8086
+    replicas: 1
+    memory: 384Mi
+    cpu: 100m
+    env: {}
+
+# Services whose pods need a stable, distinct number: order-svc puts it into every order id
+# (8-bit worker field), so two pods must never share one. A StatefulSet gives each pod an
+# ordinal; the container takes CONVEYOR_ORDER_WORKER_ID from it.
+statefulWorkers:
+  order-svc: CONVEYOR_ORDER_WORKER_ID
+
+smoke:
+  image: curlimages/curl:8.10.1

@@ -1,0 +1,10 @@
+apiVersion: v2
+name: conveyor
+description: >-
+  Conveyor's eight services: one Deployment, Service, PodDisruptionBudget and
+  HorizontalPodAutoscaler each, Kubernetes probes on the actuator's liveness and readiness
+  groups, the Debezium connector registration as a post-install Job, and a smoke test
+  (helm test) that places an order and waits for the saga to confirm it.
+type: application
+version: 0.8.0
+appVersion: "0.8.0"

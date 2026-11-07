@@ -1,0 +1,53 @@
+name: kind
+
+# Conveyor on Kubernetes: the Helm charts installed on a kind cluster on one runner, the
+# middleware chart first, then the services, then `helm test` places an order and waits for the
+# saga to confirm it. Also renders and lints the charts on every push that touches them.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ["deploy/helm/**", "deploy/kind/**", "deploy/docker/**", ".github/workflows/kind.yml"]
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: helm lint and render
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - run: helm lint deploy/helm/conveyor deploy/helm/conveyor-deps
+      - run: helm template t deploy/helm/conveyor > /dev/null && helm template d deploy/helm/conveyor-deps > /dev/null
+
+  cluster:
+    name: install on kind and smoke-test
+    needs: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - uses: gradle/actions/setup-gradle@v6
+
+      - name: Allow OpenSearch's memory maps
+        run: sudo sysctl -w vm.max_map_count=262144
+
+      - run: ./gradlew assemble
+
+      - name: Up, install, smoke test
+        run: deploy/kind/up.sh
+
+      - name: On failure, what the cluster saw
+        if: failure()
+        run: |
+          kubectl get pods -A -o wide
+          kubectl get events --sort-by=.lastTimestamp | tail -60
+          for p in $(kubectl get pods -o name); do echo "=== $p"; kubectl logs "$p" --tail=60 --all-containers || true; done
