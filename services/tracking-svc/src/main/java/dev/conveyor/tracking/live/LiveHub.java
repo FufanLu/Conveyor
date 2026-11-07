@@ -41,6 +41,7 @@ public class LiveHub {
         this.delay = Timer.builder("tracking.live.delay")
                 .publishPercentiles(0.5, 0.99)
                 .publishPercentileHistogram()
+                .maximumExpectedValue(Duration.ofMinutes(5))
                 .register(registry);
         Gauge.builder("tracking.live.watched.shipments", topics, Map::size).register(registry);
     }

@@ -22,8 +22,8 @@ import org.springframework.stereotype.Component;
 /**
  * Kafka -> DynamoDB. Works in batches (one poll): every report is appended with its own
  * conditional put, all in flight at once; the shipment item then gets one position update per
- * shipment (the newest in the batch), not one per report. A courier sending a ping a second
- * with 10 s batches costs 10 event writes and 1 shipment write.
+ * shipment (the newest in the batch), and the PositionCoalescer limits that further to one
+ * per shipment per positionWriteInterval.
  *
  * <p>The batch is acknowledged only after every write completed; a failure makes the container
  * redeliver the batch, and the conditional puts turn the repeats into counted duplicates.
@@ -33,15 +33,17 @@ class TrackingPersister {
 
     private final EventStore events;
     private final ShipmentStore shipments;
+    private final PositionCoalescer coalescer;
     private final Counter stored;
     private final Counter duplicates;
     private final Counter shipmentWrites;
     private final Timer delay;
     private final DistributionSummary batchSize;
 
-    TrackingPersister(EventStore events, ShipmentStore shipments, MeterRegistry registry) {
+    TrackingPersister(EventStore events, ShipmentStore shipments, PositionCoalescer coalescer, MeterRegistry registry) {
         this.events = events;
         this.shipments = shipments;
+        this.coalescer = coalescer;
         this.stored = Counter.builder("tracking.persist.events")
                 .tag("outcome", "stored")
                 .register(registry);
@@ -54,6 +56,7 @@ class TrackingPersister {
         this.delay = Timer.builder("tracking.persist.delay")
                 .publishPercentiles(0.5, 0.99)
                 .publishPercentileHistogram()
+                .maximumExpectedValue(Duration.ofMinutes(15))
                 .register(registry);
         this.batchSize =
                 DistributionSummary.builder("tracking.persist.batch.size").register(registry);
@@ -81,8 +84,7 @@ class TrackingPersister {
                 scans.add(shipments.applyScan(r));
             }
         }
-        List<CompletableFuture<Boolean>> moves = new ArrayList<>(newestPosition.size());
-        newestPosition.values().forEach(r -> moves.add(shipments.movePosition(r)));
+        List<CompletableFuture<Boolean>> moves = coalescer.offer(newestPosition.values());
         CompletableFuture.allOf(appends.toArray(CompletableFuture[]::new)).join();
         CompletableFuture.allOf(scans.toArray(CompletableFuture[]::new)).join();
         CompletableFuture.allOf(moves.toArray(CompletableFuture[]::new)).join();

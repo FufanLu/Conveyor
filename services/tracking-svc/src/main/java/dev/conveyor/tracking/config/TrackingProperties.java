@@ -14,6 +14,7 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  * @param eventRetention  DynamoDB TTL on reports
  * @param mapInterval     how often the ops map stream sends the latest position per shipment
  * @param subscriberBuffer reports buffered per SSE subscriber before the oldest are dropped
+ * @param positionWriteInterval at most one latest-position write per shipment per interval (0 = every batch)
  */
 @ConfigurationProperties("conveyor.tracking")
 public record TrackingProperties(
@@ -23,4 +24,5 @@ public record TrackingProperties(
         @DefaultValue("shipments") String shipmentsTable,
         @DefaultValue("90d") Duration eventRetention,
         @DefaultValue("500ms") Duration mapInterval,
-        @DefaultValue("256") int subscriberBuffer) {}
+        @DefaultValue("256") int subscriberBuffer,
+        @DefaultValue("5s") Duration positionWriteInterval) {}

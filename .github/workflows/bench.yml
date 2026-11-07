@@ -26,6 +26,9 @@ on:
       tracking_rates:
         description: Firehose steps, reports per second
         default: "2000 5000 10000 20000"
+      tracking_position_interval:
+        description: tracking-svc position-write-interval (0s = no coalescing)
+        default: "5s"
       buyers:
         description: Buyers in the service burst
         default: "10000"
@@ -153,6 +156,7 @@ jobs:
       - name: Firehose
         env:
           RATES: ${{ inputs.tracking_rates }}
+          POSITION_WRITE_INTERVAL: ${{ inputs.tracking_position_interval }}
         run: tools/bench/tracking-firehose.sh | tee tracking-firehose-results.txt
 
       - uses: actions/upload-artifact@v7

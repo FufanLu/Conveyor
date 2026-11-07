@@ -27,12 +27,15 @@ import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.core.env.Environment;
 import org.springframework.http.MediaType;
 import org.springframework.http.codec.ServerSentEvent;
+import org.springframework.kafka.config.KafkaListenerEndpointRegistry;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.test.web.reactive.server.WebTestClient;
 import reactor.core.publisher.Flux;
 import reactor.test.StepVerifier;
 
-@SpringBootTest(webEnvironment = WebEnvironment.RANDOM_PORT)
+@SpringBootTest(
+        webEnvironment = WebEnvironment.RANDOM_PORT,
+        properties = "conveyor.tracking.position-write-interval=1s")
 @Import(TrackingTestcontainers.class)
 class TrackingApiTest {
 
@@ -48,7 +51,24 @@ class TrackingApiTest {
     @Autowired
     MeterRegistry meters;
 
+    @Autowired
+    KafkaListenerEndpointRegistry listeners;
+
     private WebTestClient http;
+
+    /**
+     * The live consumer starts at the latest offset of a brand-new group, so it sees only what
+     * is produced after it owns its partitions. Tests that post and then expect a live push wait
+     * for that first (a slow CI runner once took long enough for the posts to land before it).
+     */
+    @BeforeEach
+    void liveConsumerOwnsItsPartitions() {
+        await().atMost(Duration.ofSeconds(60)).until(() -> {
+            var container = listeners.getListenerContainer("tracking-live");
+            var assigned = container == null ? null : container.getAssignedPartitions();
+            return assigned != null && assigned.size() == 24;
+        });
+    }
 
     @BeforeEach
     void client() {
@@ -239,7 +259,8 @@ class TrackingApiTest {
                 .then(() ->
                         post("courier-3", positions(id, 8, 1)).expectStatus().isAccepted())
                 .expectNext("8")
-                .verifyComplete();
+                .expectComplete()
+                .verify(Duration.ofSeconds(60));
 
         // A reconnect with Last-Event-ID: 6 gets 7 and 8 only.
         Flux<String> resumed = http.get()
@@ -257,7 +278,10 @@ class TrackingApiTest {
                         .expectBody()
                         .jsonPath("$.lastSeq")
                         .isEqualTo(8));
-        StepVerifier.create(resumed.take(2)).expectNext("7", "8").verifyComplete();
+        StepVerifier.create(resumed.take(2))
+                .expectNext("7", "8")
+                .expectComplete()
+                .verify(Duration.ofSeconds(60));
     }
 
     @Test
@@ -295,7 +319,8 @@ class TrackingApiTest {
                     // 60 reports arrive within one 500 ms frame, so the frame holds one dot per shipment.
                     assertThat(dots).extracting(d -> d.get("shipmentId")).doesNotHaveDuplicates();
                 })
-                .verifyComplete();
+                .expectComplete()
+                .verify(Duration.ofSeconds(60));
     }
 
     @Test

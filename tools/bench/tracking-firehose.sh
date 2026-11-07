@@ -11,6 +11,8 @@ URL=http://127.0.0.1:8085
 RATES=${RATES:-"2000 5000 10000 20000"}
 STEP_SECONDS=${STEP_SECONDS:-30}
 JAR=${JAR:-services/tracking-svc/build/libs/tracking-svc.jar}
+# Latest-position writes per shipment: at most one per interval (0s = one per persister batch).
+POSITION_WRITE_INTERVAL=${POSITION_WRITE_INTERVAL:-5s}
 WORK=${WORK:-build/tracking-firehose}
 rm -rf "$WORK" && mkdir -p "$WORK"
 M="python3 tools/bench/metrics.py"
@@ -18,7 +20,8 @@ M="python3 tools/bench/metrics.py"
 echo "machine: $(uname -sm), $(getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu) CPUs"
 command -v lscpu > /dev/null && lscpu | grep -E '^Model name' || true
 
-"$JAVA" -Xmx1g -jar "$JAR" > "$WORK/tracking.log" 2>&1 &
+echo "position-write-interval=$POSITION_WRITE_INTERVAL"
+"$JAVA" -Xmx1g -jar "$JAR" --conveyor.tracking.position-write-interval="$POSITION_WRITE_INTERVAL" > "$WORK/tracking.log" 2>&1 &
 SVC=$!
 trap 'kill $SVC 2>/dev/null || true' EXIT
 until curl --noproxy '*' -fs -o /dev/null $URL/actuator/health/readiness; do sleep 1; done
