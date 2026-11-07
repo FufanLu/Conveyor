@@ -124,6 +124,9 @@ try {
   // the page holds an SSE stream open, so the network never goes idle: wait for the DOM
   await ops.goto(`${WEB}/ops`, { waitUntil: "domcontentloaded" });
   await ops.waitForSelector(".ops-table tbody tr", { timeout: 30000 });
+  await ops.waitForFunction(() => /live/i.test(document.querySelector(".ops-legend")?.textContent ?? ""), {
+    timeout: 20000,
+  });
   await sleep(3000);
   const rows = await ops.$$eval(".ops-table tbody tr", (r) => r.length);
   step("ops network view and order search", {
