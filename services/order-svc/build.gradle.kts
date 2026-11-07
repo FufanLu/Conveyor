@@ -8,6 +8,8 @@ plugins {
 dependencies {
     implementation(project(":libs:proto"))
     implementation("org.springframework.boot:spring-boot-starter-webmvc")
+    // RestClient.Builder bean: outbound calls carry the observation registry (traces, metrics)
+    implementation("org.springframework.boot:spring-boot-starter-restclient")
     implementation("org.springframework.boot:spring-boot-starter-jdbc")
     implementation("org.springframework.boot:spring-boot-starter-kafka")
     implementation("org.springframework.boot:spring-boot-starter-oauth2-resource-server")

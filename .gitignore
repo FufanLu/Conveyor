@@ -30,3 +30,6 @@ dist/
 .impeccable/mocks/
 .impeccable/build/
 .impeccable/config.local.json
+
+# end-to-end runner dependencies
+tools/e2e/node_modules/

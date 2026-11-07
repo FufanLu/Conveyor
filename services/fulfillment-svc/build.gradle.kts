@@ -9,6 +9,8 @@ plugins {
 dependencies {
     implementation(project(":libs:proto"))
     implementation("org.springframework.boot:spring-boot-starter-webmvc")
+    // RestClient.Builder bean: outbound calls carry the observation registry (traces, metrics)
+    implementation("org.springframework.boot:spring-boot-starter-restclient")
     implementation("org.springframework.boot:spring-boot-starter-kafka")
     implementation("io.grpc:grpc-netty")
     implementation(libs.temporal.sdk)

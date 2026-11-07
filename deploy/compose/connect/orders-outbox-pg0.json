@@ -22,7 +22,7 @@
   "transforms.outbox.predicate": "isHeartbeat",
   "transforms.outbox.negate": "true",
   "transforms.outbox.route.topic.replacement": "${routedByValue}.events",
-  "transforms.outbox.table.fields.additional.placement": "type:header:eventType,id:header:eventId",
+  "transforms.outbox.table.fields.additional.placement": "type:header:eventType,id:header:eventId,traceparent:header:traceparent",
   "predicates": "isHeartbeat",
   "predicates.isHeartbeat.type": "org.apache.kafka.connect.transforms.predicates.TopicNameMatches",
   "predicates.isHeartbeat.pattern": "__debezium-heartbeat.*",

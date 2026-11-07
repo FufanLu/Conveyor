@@ -12,6 +12,12 @@ export default defineConfig(({ mode }) => {
       strictPort: true,
       proxy: { "/api": { target: env.CONVEYOR_GATEWAY ?? "http://localhost:18080", changeOrigin: false } },
     },
+    // `vite preview` serves the production build with the same /api proxy (the end-to-end run).
+    preview: {
+      port: Number(env.PORT ?? 5280),
+      strictPort: true,
+      proxy: { "/api": { target: env.CONVEYOR_GATEWAY ?? "http://localhost:18080", changeOrigin: false } },
+    },
     build: { target: "es2022", sourcemap: true },
   };
 });

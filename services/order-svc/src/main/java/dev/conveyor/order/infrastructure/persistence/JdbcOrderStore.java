@@ -10,6 +10,9 @@ import dev.conveyor.order.domain.Shards;
 import dev.conveyor.order.infrastructure.shard.ShardGroup;
 import dev.conveyor.order.infrastructure.shard.ShardRouter;
 import dev.conveyor.platform.web.RequestIds;
+import io.micrometer.tracing.Span;
+import io.micrometer.tracing.TraceContext;
+import io.micrometer.tracing.Tracer;
 import java.security.MessageDigest;
 import java.sql.Timestamp;
 import java.time.Clock;
@@ -20,6 +23,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import org.jspecify.annotations.Nullable;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.SqlParameterSource;
 import org.springframework.stereotype.Repository;
@@ -33,9 +38,26 @@ class JdbcOrderStore implements OrderStore {
     private final ShardRouter router;
     private final Clock clock;
 
-    JdbcOrderStore(ShardRouter router, Clock clock) {
+    private final ObjectProvider<Tracer> tracer;
+
+    JdbcOrderStore(ShardRouter router, Clock clock, ObjectProvider<Tracer> tracer) {
         this.router = router;
         this.clock = clock;
+        this.tracer = tracer;
+    }
+
+    /**
+     * The current span as a W3C traceparent, stored with the outbox row. Debezium is the Kafka
+     * producer, not this service, so the trace would otherwise end at the database.
+     */
+    private @Nullable String traceparent() {
+        Tracer t = tracer.getIfAvailable();
+        Span span = t == null ? null : t.currentSpan();
+        if (span == null) {
+            return null;
+        }
+        TraceContext c = span.context();
+        return "00-" + c.traceId() + "-" + c.spanId() + "-" + (Boolean.TRUE.equals(c.sampled()) ? "01" : "00");
     }
 
     @Override
@@ -57,8 +79,9 @@ class JdbcOrderStore implements OrderStore {
             insertOrder(db, shard, order);
             UUID eventId = RequestIds.uuidV7(clock);
             db.jdbc()
-                    .sql("INSERT INTO outbox (id, aggregatetype, aggregateid, type, payload)"
-                            + " VALUES (:id, :aggregate, :order, 'OrderPlaced', :payload)")
+                    .sql("INSERT INTO outbox (id, aggregatetype, aggregateid, type, payload, traceparent)"
+                            + " VALUES (:id, :aggregate, :order, 'OrderPlaced', :payload, :traceparent)")
+                    .param("traceparent", traceparent())
                     .param("id", eventId)
                     .param("aggregate", AGGREGATE)
                     .param("order", order.id().toString())
@@ -148,8 +171,9 @@ class JdbcOrderStore implements OrderStore {
             }
             UUID eventId = RequestIds.uuidV7(clock);
             db.jdbc()
-                    .sql("INSERT INTO outbox (id, aggregatetype, aggregateid, type, payload)"
-                            + " VALUES (:id, :aggregate, :order, 'OrderStatusChanged', :payload)")
+                    .sql("INSERT INTO outbox (id, aggregatetype, aggregateid, type, payload, traceparent)"
+                            + " VALUES (:id, :aggregate, :order, 'OrderStatusChanged', :payload, :traceparent)")
+                    .param("traceparent", traceparent())
                     .param("id", eventId)
                     .param("aggregate", AGGREGATE)
                     .param("order", id.toString())

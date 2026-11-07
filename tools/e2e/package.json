@@ -1,0 +1,9 @@
+{
+  "name": "conveyor-e2e",
+  "private": true,
+  "type": "module",
+  "description": "A browser drives the real stack: Keycloak sign-in, an order through the saga, a courier delivering it, the ops view.",
+  "dependencies": {
+    "puppeteer": "24.25.0"
+  }
+}
