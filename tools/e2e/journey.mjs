@@ -121,7 +121,8 @@ try {
   ops.on("pageerror", (e) => errors.push(e.message));
   await ops.setViewport({ width: 1440, height: 900 });
   await signIn(ops, "ops");
-  await ops.goto(`${WEB}/ops`, { waitUntil: "networkidle0" });
+  // the page holds an SSE stream open, so the network never goes idle: wait for the DOM
+  await ops.goto(`${WEB}/ops`, { waitUntil: "domcontentloaded" });
   await ops.waitForSelector(".ops-table tbody tr", { timeout: 30000 });
   await sleep(3000);
   const rows = await ops.$$eval(".ops-table tbody tr", (r) => r.length);

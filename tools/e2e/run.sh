@@ -96,11 +96,15 @@ for i in $(seq 1 40); do
     sleep 0.2 # stay under the gateway's 10 orders/s per-customer rate limit
 done | tee "$OUT/chaos.txt" | awk 'NR<=3 || NR%5==0'
 kill -CONT "$CATALOG"
+RESUMED=$(python3 -c "import time; print(time.time())")
 echo "catalog-svc resumed"
-sleep 6 # past the 5 s open period: half-open, trial calls
-for i in $(seq 1 8); do
-    echo "after $i: $(order "after-$i")  breaker $(breaker)"
-    sleep 0.2
+# Trial calls made while catalog was still frozen may reopen the breaker for another 5 s;
+# keep ordering twice a second until it has closed and orders succeed.
+for i in $(seq 1 60); do
+    line="$(order "after-$i")  breaker $(breaker)"
+    printf 'after %5.1f s: %s\n' "$(python3 -c "import time; print(time.time() - $RESUMED)")" "$line"
+    case "$line" in 201*'state="closed"'*) break ;; esac
+    sleep 0.5
 done | tee -a "$OUT/chaos.txt"
 
 echo "### SLO recording rules over the run (Prometheus)"
