@@ -1,0 +1,60 @@
+.page-title {
+  font-size: 30px;
+}
+.departures {
+  list-style: none;
+  margin: 0 0 var(--s8);
+  padding: 0;
+}
+.departure {
+  display: grid;
+  grid-template-columns: 28px minmax(140px, 1fr) 90px 110px 120px 150px;
+  align-items: center;
+  gap: var(--s4);
+  min-height: 60px;
+  padding: var(--s2) var(--s3);
+  border-bottom: 1px solid var(--rule);
+  text-decoration: none;
+  transition: background 120ms var(--ease);
+}
+.departure:hover {
+  background: var(--surface);
+}
+.dep-id {
+  font-size: 16px;
+  font-weight: 600;
+}
+.dep-total {
+  font: 600 18px/1 var(--sign);
+  justify-self: end;
+}
+.dep-status {
+  justify-self: end;
+}
+@media (max-width: 760px) {
+  .departure {
+    grid-template-columns: 28px 1fr auto;
+    grid-template-areas: "b id total" "b status when";
+    row-gap: var(--s1);
+  }
+  .departure > :first-child {
+    grid-area: b;
+  }
+  .dep-id {
+    grid-area: id;
+  }
+  .dep-total {
+    grid-area: total;
+  }
+  .dep-status {
+    grid-area: status;
+    justify-self: start;
+  }
+  .dep-when {
+    grid-area: when;
+    justify-self: end;
+  }
+  .dep-items {
+    display: none;
+  }
+}

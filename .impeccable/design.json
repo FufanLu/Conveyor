@@ -1,0 +1,546 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-07T10:52:05+00:00",
+  "title": "Design System: Conveyor Lines",
+  "extensions": {
+    "colorMeta": {
+      "ground": {
+        "role": "neutral",
+        "displayName": "Platform Wall",
+        "canonical": "#f4f5f3",
+        "oklch": "oklch(96.9% 0.003 128.5)",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#252524",
+          "#424241",
+          "#616160",
+          "#828281",
+          "#a4a5a4",
+          "#c8c9c8",
+          "#eeefed"
+        ]
+      },
+      "surface": {
+        "role": "neutral",
+        "displayName": "Paper White",
+        "canonical": "#ffffff",
+        "oklch": "oklch(100.0% 0.000 89.9)",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#252525",
+          "#424242",
+          "#616161",
+          "#828282",
+          "#a5a5a5",
+          "#c9c9c9",
+          "#eeeeee"
+        ]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Signal Black",
+        "canonical": "#141414",
+        "oklch": "oklch(19.1% 0.000 89.9)",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#252525",
+          "#424242",
+          "#616161",
+          "#828282",
+          "#a5a5a5",
+          "#c9c9c9",
+          "#eeeeee"
+        ]
+      },
+      "ink-2": {
+        "role": "neutral",
+        "displayName": "Graphite",
+        "canonical": "#4a4e4a",
+        "oklch": "oklch(41.9% 0.008 145.4)",
+        "tonalRamp": [
+          "#090c09",
+          "#232623",
+          "#3f433f",
+          "#5e625e",
+          "#808380",
+          "#a2a6a2",
+          "#c7cac7",
+          "#ecefec"
+        ]
+      },
+      "ink-3": {
+        "role": "neutral",
+        "displayName": "Ash",
+        "canonical": "#6b706b",
+        "oklch": "oklch(53.9% 0.010 145.4)",
+        "tonalRamp": [
+          "#090c09",
+          "#232623",
+          "#3f433f",
+          "#5e635e",
+          "#7f847f",
+          "#a2a6a2",
+          "#c6cbc6",
+          "#ebf0eb"
+        ]
+      },
+      "rule": {
+        "role": "neutral",
+        "displayName": "Rule Grey",
+        "canonical": "#d6d9d5",
+        "oklch": "oklch(88.2% 0.006 137.8)",
+        "tonalRamp": [
+          "#0a0b0a",
+          "#242524",
+          "#414240",
+          "#60625f",
+          "#818380",
+          "#a3a6a2",
+          "#c7cac6",
+          "#ecefeb"
+        ]
+      },
+      "rule-2": {
+        "role": "neutral",
+        "displayName": "Hairline",
+        "canonical": "#e7e9e6",
+        "oklch": "oklch(93.2% 0.005 134.9)",
+        "tonalRamp": [
+          "#0b0b0a",
+          "#242524",
+          "#414241",
+          "#606260",
+          "#818381",
+          "#a4a5a3",
+          "#c8cac7",
+          "#edefec"
+        ]
+      },
+      "band": {
+        "role": "neutral",
+        "displayName": "Sign Band Black",
+        "canonical": "#141414",
+        "oklch": "oklch(19.1% 0.000 89.9)",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#252525",
+          "#424242",
+          "#616161",
+          "#828282",
+          "#a5a5a5",
+          "#c9c9c9",
+          "#eeeeee"
+        ]
+      },
+      "band-2": {
+        "role": "neutral",
+        "displayName": "Band Shade",
+        "canonical": "#232523",
+        "oklch": "oklch(26.2% 0.005 145.4)",
+        "tonalRamp": [
+          "#0a0c0a",
+          "#242624",
+          "#414341",
+          "#606260",
+          "#818381",
+          "#a4a5a4",
+          "#c8cac8",
+          "#edefed"
+        ]
+      },
+      "band-ink": {
+        "role": "neutral",
+        "displayName": "Band White",
+        "canonical": "#ffffff",
+        "oklch": "oklch(100.0% 0.000 89.9)",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#252525",
+          "#424242",
+          "#616161",
+          "#828282",
+          "#a5a5a5",
+          "#c9c9c9",
+          "#eeeeee"
+        ]
+      },
+      "band-ink-2": {
+        "role": "neutral",
+        "displayName": "Band Silver",
+        "canonical": "#b9bdb9",
+        "oklch": "oklch(79.4% 0.007 145.5)",
+        "tonalRamp": [
+          "#0a0c0a",
+          "#242624",
+          "#404340",
+          "#5f625f",
+          "#808380",
+          "#a2a6a2",
+          "#c6cac6",
+          "#ecf0ec"
+        ]
+      },
+      "east": {
+        "role": "primary",
+        "displayName": "Line Cobalt",
+        "canonical": "#1f4bd8",
+        "oklch": "oklch(48.3% 0.220 265.1)",
+        "tonalRamp": [
+          "#0a0054",
+          "#04007f",
+          "#0b2aad",
+          "#224fdb",
+          "#4577fa",
+          "#6a9eff",
+          "#91c4ff",
+          "#baecff"
+        ]
+      },
+      "central": {
+        "role": "secondary",
+        "displayName": "Line Green",
+        "canonical": "#0b8043",
+        "oklch": "oklch(52.7% 0.133 152.7)",
+        "tonalRamp": [
+          "#001500",
+          "#003303",
+          "#00531e",
+          "#00753a",
+          "#39985c",
+          "#66ba81",
+          "#91dea7",
+          "#bbffcf"
+        ]
+      },
+      "south": {
+        "role": "secondary",
+        "displayName": "Line Amber",
+        "canonical": "#f2a900",
+        "oklch": "oklch(78.5% 0.164 77.6)",
+        "tonalRamp": [
+          "#200000",
+          "#411800",
+          "#653500",
+          "#8a5400",
+          "#b27400",
+          "#db9600",
+          "#ffba37",
+          "#ffe172"
+        ]
+      },
+      "west": {
+        "role": "secondary",
+        "displayName": "Line Violet",
+        "canonical": "#8e3ccb",
+        "oklch": "oklch(53.6% 0.212 306.7)",
+        "tonalRamp": [
+          "#1e003e",
+          "#3c0065",
+          "#5d038f",
+          "#802fba",
+          "#a257df",
+          "#c480ff",
+          "#e7a8ff",
+          "#ffd1ff"
+        ]
+      },
+      "fail": {
+        "role": "tertiary",
+        "displayName": "Signal Vermilion",
+        "canonical": "#e0351b",
+        "oklch": "oklch(59.4% 0.210 31.6)",
+        "tonalRamp": [
+          "#350000",
+          "#5f0000",
+          "#8a0000",
+          "#b70e00",
+          "#e43b22",
+          "#ff6c52",
+          "#ff977d",
+          "#ffc2a8"
+        ]
+      },
+      "fail-on-band": {
+        "role": "tertiary",
+        "displayName": "Signal Vermilion, band tint",
+        "canonical": "#ff6a50",
+        "oklch": "oklch(70.6% 0.187 32.0)",
+        "tonalRamp": [
+          "#2e0000",
+          "#560000",
+          "#7f0900",
+          "#aa2f1b",
+          "#d74f37",
+          "#ff7056",
+          "#ff9a80",
+          "#ffc4aa"
+        ]
+      },
+      "unreached": {
+        "role": "neutral",
+        "displayName": "Unreached",
+        "canonical": "#b3b8b3",
+        "oklch": "oklch(77.7% 0.009 145.5)",
+        "tonalRamp": [
+          "#0a0c0a",
+          "#232623",
+          "#404340",
+          "#5f625f",
+          "#7f847f",
+          "#a2a6a2",
+          "#c6cbc6",
+          "#ebf0eb"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "The order id on the order page band; identifiers are headlines."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Page names on sign bands (34px on mobile)."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Section heads over a 2px ink rule."
+      },
+      "figure": {
+        "displayName": "Figure",
+        "purpose": "Readout values on bands: now, next, total, arrives by."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Running text and table cells; tabular numerals on."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Uppercase field labels, table heads, readout terms; always names an adjacent value."
+      },
+      "plate": {
+        "displayName": "Plate",
+        "purpose": "Status plates and live-state text."
+      }
+    },
+    "shadows": [
+      {
+        "name": "plate-outline",
+        "value": "inset 0 0 0 1px var(--ink)",
+        "purpose": "Outline for opening-state plates; a stroke, not lift."
+      },
+      {
+        "name": "row-rail",
+        "value": "inset 4px 0 0 var(--ink)",
+        "purpose": "Left rail on an expanded catalog row."
+      },
+      {
+        "name": "pick-ring",
+        "value": "inset 0 0 0 1px var(--ink)",
+        "purpose": "Thickens a selected region pick border to 2px."
+      },
+      {
+        "name": "live-halo",
+        "value": "0 0 0 3px var(--rule)",
+        "purpose": "Halo around the live dot (band-2 on bands)."
+      },
+      {
+        "name": "focus",
+        "value": "outline: 3px solid var(--east); outline-offset: 2px",
+        "purpose": "Global focus-visible ring."
+      }
+    ],
+    "motion": [
+      {
+        "name": "ease",
+        "value": "cubic-bezier(0.16, 1, 0.3, 1)",
+        "purpose": "All state transitions."
+      },
+      {
+        "name": "state",
+        "value": "150ms",
+        "purpose": "Colour and border changes on controls and nav."
+      },
+      {
+        "name": "press",
+        "value": "120ms translateY(1px)",
+        "purpose": "Button active nudge."
+      },
+      {
+        "name": "line-advance",
+        "value": "400ms (travelled segment), 600ms (train)",
+        "purpose": "Line grows and train moves when a station is reached."
+      },
+      {
+        "name": "courier",
+        "value": "900ms linear",
+        "purpose": "Courier bullet glides between position reports."
+      },
+      {
+        "name": "ring-pulse",
+        "value": "1.8s infinite, scale 0.8 to 1.7, fading",
+        "purpose": "Live ring around the train and courier."
+      },
+      {
+        "name": "live-blink",
+        "value": "1.6s steps(2)",
+        "purpose": "Live dot blink."
+      },
+      {
+        "name": "reduced-motion",
+        "value": "0ms",
+        "purpose": "All transitions and animations zeroed under prefers-reduced-motion."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "mobile",
+        "value": "640px"
+      },
+      {
+        "name": "compact",
+        "value": "760px"
+      },
+      {
+        "name": "route-stack",
+        "value": "900px"
+      },
+      {
+        "name": "ops-stack",
+        "value": "1100px"
+      }
+    ],
+    "diagram": {
+      "lineWidth": "6px",
+      "bendAngle": "45deg",
+      "stationReached": "r9, 3px ink stroke, surface fill",
+      "stationUnreached": "r6, 2px unreached stroke",
+      "trackAhead": "2px unreached, dash 2 6",
+      "trunk": "3px unreached",
+      "interchange": "r10-13 ring, 3-3.5px ink stroke",
+      "failTerminus": "18px vermilion square",
+      "labelHalo": "paint-order stroke, 4px ground"
+    }
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Ink slab with a white sign-face legend; the one committing action in a view.",
+      "html": "<button class=\"ds-btn\">Place order</button>",
+      "css": ".ds-btn{display:inline-flex;align-items:center;justify-content:center;min-height:40px;padding:0 16px;border:2px solid var(--ink,#141414);border-radius:3px;background:var(--ink,#141414);color:#fff;font:600 16px/1 \"Barlow Semi Condensed\",\"Barlow\",sans-serif;letter-spacing:.01em;cursor:pointer;transition:background 150ms cubic-bezier(.16,1,.3,1),transform 120ms cubic-bezier(.16,1,.3,1)}.ds-btn:hover{background:var(--band-2,#232523)}.ds-btn:active{transform:translateY(1px)}.ds-btn:focus-visible{outline:3px solid var(--east,#1f4bd8);outline-offset:2px}"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "Outlined ink button that inverts on hover; secondary actions and filters.",
+      "html": "<button class=\"ds-btn-ghost\">Filter</button>",
+      "css": ".ds-btn-ghost{display:inline-flex;align-items:center;min-height:40px;padding:0 16px;border:2px solid var(--ink,#141414);border-radius:3px;background:transparent;color:var(--ink,#141414);font:600 16px/1 \"Barlow Semi Condensed\",\"Barlow\",sans-serif;cursor:pointer;transition:background 150ms cubic-bezier(.16,1,.3,1),color 150ms cubic-bezier(.16,1,.3,1)}.ds-btn-ghost:hover{background:var(--ink,#141414);color:#fff}.ds-btn-ghost:focus-visible{outline:3px solid var(--east,#1f4bd8);outline-offset:2px}"
+    },
+    {
+      "name": "Field",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Uppercase sign-face label over a near-square white input.",
+      "html": "<label class=\"ds-field\"><span>SKU</span><input class=\"ds-input\" placeholder=\"SKU, e.g. B0DEE0D8F5\"></label>",
+      "css": ".ds-field{display:grid;gap:4px;font-family:\"Barlow\",system-ui,sans-serif}.ds-field>span{font:600 13px/1.2 \"Barlow Semi Condensed\",\"Barlow\",sans-serif;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-2,#4a4e4a)}.ds-input{min-height:40px;padding:0 12px;border:1px solid var(--ink-3,#6b706b);border-radius:3px;background:#fff;font:inherit;color:var(--ink,#141414)}.ds-input:hover{border-color:var(--ink,#141414)}.ds-input:focus-visible{outline:3px solid var(--east,#1f4bd8);outline-offset:2px}.ds-input::placeholder{color:var(--ink-3,#6b706b)}"
+    },
+    {
+      "name": "Top Bar",
+      "kind": "nav",
+      "refersTo": "sign-band",
+      "description": "Black sign band with wordmark and sign-face nav; current page underlined in white.",
+      "html": "<nav class=\"ds-top\"><a class=\"ds-word\" href=\"#\"><svg width=\"30\" height=\"24\" viewBox=\"0 0 30 24\" aria-hidden=\"true\"><path d=\"M2 18 H10 L18 6 H28\" fill=\"none\" stroke=\"#1f4bd8\" stroke-width=\"5\" stroke-linejoin=\"round\"/><circle cx=\"10\" cy=\"18\" r=\"4.5\" fill=\"#fff\"/><circle cx=\"10\" cy=\"18\" r=\"2.5\" fill=\"#141414\"/><circle cx=\"18\" cy=\"6\" r=\"4.5\" fill=\"#fff\"/><circle cx=\"18\" cy=\"6\" r=\"2.5\" fill=\"#141414\"/></svg>Conveyor</a><a href=\"#\">Shop</a><a href=\"#\" aria-current=\"page\">My orders</a><a href=\"#\">Network</a></nav>",
+      "css": ".ds-top{display:flex;align-items:stretch;gap:0;min-height:56px;padding:0 24px;background:#141414;border-bottom:1px solid #000}.ds-top a{display:flex;align-items:center;padding:0 16px;font:600 16px/1 \"Barlow Semi Condensed\",\"Barlow\",sans-serif;color:#b9bdb9;text-decoration:none;border-bottom:4px solid transparent;transition:color 150ms,border-color 150ms}.ds-top a:hover{color:#fff}.ds-top a[aria-current=\"page\"]{color:#fff;border-bottom-color:#fff}.ds-top a:focus-visible{outline:3px solid #1f4bd8;outline-offset:-3px}.ds-top .ds-word{gap:8px;padding:0 24px 0 0;font:700 22px/1 \"Barlow Semi Condensed\",\"Barlow\",sans-serif;color:#fff}"
+    },
+    {
+      "name": "Status Plates",
+      "kind": "chip",
+      "refersTo": "plate-status",
+      "description": "Uppercase slabs: solid ink in progress, outlined when opening, vermilion on failure only.",
+      "html": "<span class=\"ds-plate\">Confirmed</span> <span class=\"ds-plate ds-open\">Placed</span> <span class=\"ds-plate ds-fail\">Payment failed</span>",
+      "css": ".ds-plate{display:inline-flex;align-items:center;padding:3px 7px;border-radius:2px;font:600 13px/1.2 \"Barlow Semi Condensed\",\"Barlow\",sans-serif;letter-spacing:.05em;text-transform:uppercase;white-space:nowrap;background:#141414;color:#fff}.ds-open{background:transparent;color:#141414;box-shadow:inset 0 0 0 1px #141414}.ds-fail{background:var(--fail,#e0351b)}"
+    },
+    {
+      "name": "Route Bullets",
+      "kind": "custom",
+      "refersTo": "route-bullet",
+      "description": "Lettered region circles; ink letter on South amber.",
+      "html": "<span class=\"ds-b\" style=\"--c:#1f4bd8\">E</span> <span class=\"ds-b\" style=\"--c:#0b8043\">C</span> <span class=\"ds-b ds-s\" style=\"--c:#f2a900\">S</span> <span class=\"ds-b\" style=\"--c:#8e3ccb\">W</span> <span class=\"ds-b ds-lg\" style=\"--c:#1f4bd8\">E</span>",
+      "css": ".ds-b{display:inline-grid;place-items:center;width:28px;height:28px;border-radius:50%;background:var(--c);color:#fff;font:700 16px/1 \"Barlow Semi Condensed\",\"Barlow\",sans-serif;vertical-align:middle}.ds-s{color:#141414}.ds-lg{width:44px;height:44px;font-size:26px}"
+    },
+    {
+      "name": "Region Pick",
+      "kind": "chip",
+      "refersTo": "facet-chip",
+      "description": "Pill radio carrying a route bullet; selected gets a 2px ink ring.",
+      "html": "<label class=\"ds-pick ds-on\"><span class=\"ds-pb\" style=\"background:#1f4bd8\">E</span>East</label> <label class=\"ds-pick\"><span class=\"ds-pb\" style=\"background:#0b8043\">C</span>Central</label>",
+      "css": ".ds-pick{display:inline-flex;align-items:center;gap:8px;height:40px;padding:0 12px 0 6px;border:1px solid #d6d9d5;border-radius:20px;background:#fff;font:500 15px/1 \"Barlow Semi Condensed\",\"Barlow\",sans-serif;cursor:pointer}.ds-pick:hover{border-color:#141414}.ds-on{border-color:#141414;box-shadow:inset 0 0 0 1px #141414}.ds-pb{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:50%;color:#fff;font:700 12px/1 \"Barlow Semi Condensed\",sans-serif}"
+    },
+    {
+      "name": "Order Line",
+      "kind": "custom",
+      "refersTo": "route-bullet",
+      "description": "Signature: stations on a 6px region line, dotted track ahead, 45-degree vermilion failure branch to a square terminus.",
+      "html": "<svg class=\"ds-line\" viewBox=\"0 0 520 120\" width=\"520\" height=\"120\"><line x1=\"20\" y1=\"50\" x2=\"340\" y2=\"50\" stroke=\"#1f4bd8\" stroke-width=\"6\" stroke-linecap=\"round\"/><line x1=\"340\" y1=\"50\" x2=\"490\" y2=\"50\" stroke=\"#b3b8b3\" stroke-width=\"2\" stroke-dasharray=\"2 6\" stroke-linecap=\"round\"/><g fill=\"#fff\" stroke=\"#141414\" stroke-width=\"3\"><circle cx=\"20\" cy=\"50\" r=\"9\"/><circle cx=\"130\" cy=\"50\" r=\"9\"/><circle cx=\"220\" cy=\"50\" r=\"9\"/></g><circle cx=\"490\" cy=\"50\" r=\"6\" fill=\"#fff\" stroke=\"#b3b8b3\" stroke-width=\"2\"/><circle cx=\"340\" cy=\"50\" r=\"12\" fill=\"#1f4bd8\"/><text x=\"340\" y=\"55.5\" text-anchor=\"middle\" fill=\"#fff\" class=\"ds-t\">E</text><text x=\"20\" y=\"85\" text-anchor=\"middle\" class=\"ds-l\">PLACED</text><text x=\"130\" y=\"85\" text-anchor=\"middle\" class=\"ds-l\">CONFIRMED</text><text x=\"220\" y=\"85\" text-anchor=\"middle\" class=\"ds-l\">PICKED</text><text x=\"490\" y=\"85\" text-anchor=\"middle\" class=\"ds-l ds-u\">DELIVERED</text><text x=\"75\" y=\"35\" text-anchor=\"middle\" class=\"ds-g\">+2.4 s</text></svg>",
+      "css": ".ds-line{background:#f4f5f3;max-width:100%}.ds-l{font:600 13px \"Barlow Semi Condensed\",sans-serif;letter-spacing:.04em;fill:#141414}.ds-u{fill:#6b706b}.ds-g{font:500 12px \"Barlow\",sans-serif;fill:#6b706b}.ds-t{font:700 15px \"Barlow Semi Condensed\",sans-serif}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Transit Network",
+    "overview": "Conveyor is drawn as a transit system in the Vignelli and Beck tradition: schematic lines plus station signage. Orders ride lines, saga steps and courier scans are stations, and fulfillment centers are interchanges. The ground is a pale platform wall. Black sign bands carry white legends set in Barlow Semi Condensed. Each region owns one saturated line colour, and vermilion means failure and nothing else.\n\nDensity is high but legible. Tables, timetables and figures all use tabular numerals, and identifiers such as order ids and SKUs are set in the sign face because they are the headlines, not metadata. Ornament is absent. Structure comes from 2px ink rules under section heads, 1px rules between rows, and the lines themselves. Motion is tied to real events only: a station lights, the train advances, the courier bullet moves, the live dot blinks.\n\nThis system rejects the card-grid SaaS dashboard and the marketplace-clone storefront. Interactions expand in place rather than opening modals: a catalog row opens into its buy panel, and an order's status reads as a line rather than as a card.",
+    "keyCharacteristics": [
+      "Platform-wall ground with full-bleed black sign bands at the top of every page",
+      "One saturated line colour per region; route bullets are lettered circles (E, C, S, W)",
+      "Stations are ringed dots on 6px lines; bends are 45 degrees",
+      "Vermilion appears only on failure: plates, termini, error rules",
+      "Tabular numerals everywhere; identifiers set in the sign face",
+      "Flat surfaces separated by rules, never by shadows"
+    ],
+    "rules": [
+      {
+        "name": "The Vermilion Is Failure Rule",
+        "body": "The fail colour marks only REJECTED, PAYMENT_FAILED, CANCELLED, DELIVERY_FAILED, and error states. It is never an accent, a CTA, or emphasis.",
+        "section": "colors"
+      },
+      {
+        "name": "The One Line Per Region Rule",
+        "body": "A region's colour appears only where that region's line, bullet, courier, or FC cluster is drawn. Do not borrow region colours for chrome or decoration.",
+        "section": "colors"
+      },
+      {
+        "name": "The Identifiers Are Headlines Rule",
+        "body": "Order ids, SKUs and shipment ids are always set in the sign face at 600 with tabular figures and 0.03em tracking, at whatever size the context gives them.",
+        "section": "typography"
+      },
+      {
+        "name": "The Tabular Everywhere Rule",
+        "body": "`tabular-nums` is set on the body. Figures in columns, timestamps and money must align.",
+        "section": "typography"
+      },
+      {
+        "name": "The Rules Not Shadows Rule",
+        "body": "Separate things with a rule or a tone change. When a box-shadow is used, it is inset or a ring and acts as a stroke, never as lift.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do open every page with a black sign band carrying the page's headline and its live readout.",
+      "Do draw status as stations on a 6px line, with 45-degree bends and ringed dots.",
+      "Do mark a region with its route bullet and line colour, and use ink letters on the South amber.",
+      "Do set ids, figures and timestamps in tabular numerals, with ids in the sign face.",
+      "Do introduce each section with a title on a 2px ink rule and a quiet meta note at the right.",
+      "Do expand in place (rows, panels) rather than opening a modal."
+    ],
+    "donts": [
+      "Don't use vermilion for anything except failure and error states.",
+      "Don't use region colours for chrome, emphasis, or decoration.",
+      "Don't lift surfaces with drop shadows; separate them with rules and tone.",
+      "Don't draw curved or free-angle lines on diagrams; use horizontal, vertical and 45 degrees only.",
+      "Don't let diagram lines run through label text; halo labels with the ground colour or route the line around them.",
+      "Don't add uppercase labels that don't name an adjacent value or control."
+    ]
+  }
+}

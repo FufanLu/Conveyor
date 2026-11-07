@@ -24,3 +24,9 @@ dist/
 
 # Logs
 *.log
+
+# Impeccable working files: review captures and generated mocks stay local
+.impeccable/review/
+.impeccable/mocks/
+.impeccable/build/
+.impeccable/config.local.json

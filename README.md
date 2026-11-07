@@ -10,13 +10,14 @@ back to the customer.
 Java 25 and Spring Boot 4.1 microservices. Each piece of middleware is chosen so it maps onto an
 AWS managed service: the same design runs on a laptop with Docker and on AWS.
 
-> **Status: M5 is done.** On top of the platform (M0), the catalog (M1: two-level cache, Bloom
+> **Status: M6 is done.** On top of the platform (M0), the catalog (M1: two-level cache, Bloom
 > filter, OpenSearch, guarded writes), orders (M2: 16 shards, idempotency, outbox → Debezium →
 > Kafka, CQRS read model) and inventory (M3: Redis Lua gate, Postgres facts, reconciler,
 > bulkhead), every placed order now runs a Temporal saga: reserve, authorize, commit, promise a
 > delivery date, confirm, with a compensation for each step and a durable 15-minute payment
 > window. tracking-svc (M5) takes the courier firehose into Kafka, stores it in DynamoDB and
-> pushes it to browsers over SSE. See [Roadmap](#roadmap).
+> pushes it to browsers over SSE. The web app (M6) draws the whole journey as a transit map.
+> See [Roadmap](#roadmap).
 
 ## Architecture
 
@@ -90,6 +91,17 @@ The interesting parts, by milestone:
 ## Measured so far
 
 Every number in this repository comes from running the code.
+
+**Chapter 06 (M6).** The web app draws the platform as a transit network:
+- An order is a line, and saga steps and courier scans are its stations.
+- Segment lengths are the real elapsed time between stations.
+- A declined card branches at 45° to a vermilion terminus.
+- The courier's track is a schematic route out of the FC interchange.
+- Operators get a network diagram with six metro insets.
+
+A fresh reviewer found the first build's ops map was still a geographic basemap and its courier
+map a raw trace. Two fix rounds followed, and one finding is still open.
+→ [docs/illustrated/06-the-web-as-a-transit-map.md](docs/illustrated/06-the-web-as-a-transit-map.md)
 
 **Chapter 05 (M5).** 2,000 to 20,000 courier reports per second on a 4-vCPU runner: ingest
 accepted every report at every step, and live push stayed at a median of tens of milliseconds.
@@ -183,6 +195,6 @@ docs/                 architecture and the illustrated walkthroughs
 | M3 | Inventory: multi-FC stock, Redis gate + Postgres facts, reconciliation, bulkhead, 4-way benchmark | done |
 | M4 | Fulfillment: Temporal saga, delivery promise, payment failure injection | done |
 | M5 | Tracking: courier event firehose, DynamoDB, SSE | done |
-| M6 | Web: storefront, live map, ops console | |
+| M6 | Web: storefront, live map, ops console | done |
 | M7 | Resilience and observability: shedding, circuit breakers, tracing, SLO dashboards, chaos | |
 | M8 | Load test and delivery: Prime Day scenario, Helm on kind, AWS CDK | |

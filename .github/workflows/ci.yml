@@ -48,3 +48,21 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - run: docker compose -f deploy/compose/compose.yaml --profile full config --quiet
+
+  web:
+    name: web (typecheck and build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npm run typecheck
+      - run: npx vite build

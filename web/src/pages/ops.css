@@ -1,0 +1,200 @@
+.ops-band {
+  padding: var(--s5) 0;
+}
+.ops-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--s5);
+  flex-wrap: wrap;
+}
+.ops-head h1 {
+  font-size: 44px;
+  line-height: 1;
+}
+.ops-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2) var(--s5);
+  margin: 0;
+  font: 500 16px/1.3 var(--sign);
+  color: var(--band-ink-2);
+}
+.ops-legend strong {
+  color: var(--band-ink);
+  font-weight: 700;
+}
+.ops-legend > span {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+}
+.ops-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(360px, 1fr);
+  gap: var(--s6);
+  padding-top: var(--s5);
+  padding-bottom: var(--s8);
+}
+.netmap svg {
+  display: block;
+}
+.nm-label {
+  font: 600 15px var(--sign);
+  fill: var(--ink);
+  paint-order: stroke;
+  stroke: var(--ground);
+  stroke-width: 4px;
+}
+.nm-sub {
+  font: 500 12px var(--text);
+  fill: var(--ink-2);
+  paint-order: stroke;
+  stroke: var(--ground);
+  stroke-width: 4px;
+}
+.ops-quiet {
+  margin: var(--s2) 0 0;
+}
+.ops-orders .section-head {
+  padding-top: 0;
+}
+.ops-filters {
+  display: grid;
+  gap: var(--s3);
+  padding: var(--s3) 0;
+}
+.seg {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0;
+  border: 1px solid var(--ink);
+  border-radius: 3px;
+  overflow: hidden;
+  width: fit-content;
+}
+.seg button {
+  height: 34px;
+  padding: 0 var(--s3);
+  border: 0;
+  border-right: 1px solid var(--rule);
+  background: var(--surface);
+  font: 600 14px/1 var(--sign);
+  cursor: pointer;
+}
+.seg button:last-child {
+  border-right: 0;
+}
+.seg button:hover {
+  background: var(--ground);
+}
+.seg button[aria-pressed="true"] {
+  background: var(--ink);
+  color: var(--band-ink);
+}
+.ops-sku {
+  display: flex;
+  gap: var(--s2);
+}
+.ops-sku .input {
+  flex: 1;
+  min-width: 0;
+}
+.ops-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+.ops-table th {
+  text-align: left;
+  font: 600 12px/1 var(--sign);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+  padding: var(--s2);
+  border-bottom: 2px solid var(--ink);
+}
+.ops-table td {
+  padding: 6px var(--s2);
+  border-bottom: 1px solid var(--rule);
+  white-space: nowrap;
+}
+.ops-table .plate {
+  font-size: 11px;
+  padding: 2px 6px;
+}
+@media (max-width: 1100px) {
+  .ops-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.ops-table-wrap {
+  overflow-x: auto;
+}
+@media (max-width: 640px) {
+  .ops-head h1 {
+    font-size: 34px;
+  }
+  .ops-table {
+    font-size: 13px;
+  }
+  .ops-table td,
+  .ops-table th {
+    padding-inline: 4px;
+  }
+  .ops-table th:nth-child(4),
+  .ops-table td:nth-child(4) {
+    display: none;
+  }
+}
+.ops-map {
+  align-self: start;
+}
+.nm-ring {
+  transition: r 400ms var(--ease);
+}
+.insets {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--s4);
+  margin-top: var(--s5);
+}
+.inset {
+  margin: 0;
+}
+.inset-map {
+  position: relative;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+}
+.inset-map > * {
+  position: absolute;
+  inset: 0;
+}
+.inset figcaption {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s2);
+  padding-top: var(--s2);
+  font-size: 13px;
+}
+.inset figcaption strong {
+  font: 600 15px/1 var(--sign);
+}
+.inset figcaption .num {
+  margin-left: auto;
+  color: var(--ink-2);
+}
+@media (max-width: 640px) {
+  .insets {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .inset figcaption {
+    flex-wrap: wrap;
+  }
+  .inset figcaption .num {
+    margin-left: 0;
+    width: 100%;
+  }
+}

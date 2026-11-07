@@ -50,12 +50,24 @@ spring:
                 - Path=/api/v1/delivery-promises/**
               filters:
                 - StripPrefix=1
+            # Shipment state and its SSE stream. Streams stay open for minutes, so this route
+            # (and the ops map below) turns the global 5 s response timeout off.
             - id: shipments
               uri: ${conveyor.upstreams.tracking}
               predicates:
                 - Path=/api/v1/shipments/**
               filters:
                 - StripPrefix=1
+              metadata:
+                response-timeout: -1
+            - id: ops-map
+              uri: ${conveyor.upstreams.tracking}
+              predicates:
+                - Path=/api/v1/ops/map
+              filters:
+                - StripPrefix=1
+              metadata:
+                response-timeout: -1
 
 server:
   port: 8080

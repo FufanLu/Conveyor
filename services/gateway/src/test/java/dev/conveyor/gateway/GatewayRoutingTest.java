@@ -61,7 +61,7 @@ class GatewayRoutingTest {
         List<String> ids =
                 routeLocator.getRoutes().map(Route::getId).collectList().block();
 
-        assertThat(ids).containsExactlyInAnyOrder("catalog", "orders", "ops-orders", "delivery-promises", "shipments");
+        assertThat(ids).containsExactlyInAnyOrder("catalog", "orders", "ops-orders", "delivery-promises", "shipments", "ops-map");
     }
 
     @Test
