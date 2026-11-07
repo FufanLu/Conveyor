@@ -10,12 +10,13 @@ back to the customer.
 Java 25 and Spring Boot 4.1 microservices. Each piece of middleware is chosen so it maps onto an
 AWS managed service: the same design runs on a laptop with Docker and on AWS.
 
-> **Status: M4 is done.** On top of the platform (M0), the catalog (M1: two-level cache, Bloom
+> **Status: M5 is done.** On top of the platform (M0), the catalog (M1: two-level cache, Bloom
 > filter, OpenSearch, guarded writes), orders (M2: 16 shards, idempotency, outbox → Debezium →
 > Kafka, CQRS read model) and inventory (M3: Redis Lua gate, Postgres facts, reconciler,
 > bulkhead), every placed order now runs a Temporal saga: reserve, authorize, commit, promise a
 > delivery date, confirm, with a compensation for each step and a durable 15-minute payment
-> window. See [Roadmap](#roadmap).
+> window. tracking-svc (M5) takes the courier firehose into Kafka, stores it in DynamoDB and
+> pushes it to browsers over SSE. See [Roadmap](#roadmap).
 
 ## Architecture
 
@@ -79,12 +80,24 @@ The interesting parts, by milestone:
   stampedes, Bloom filters against penetration, TTL jitter against avalanches.
 - **Overload protection (M7).** Token-bucket rate limits plus latency-based adaptive concurrency
   limits at the gateway, shedding low-priority traffic first.
-- **Tracking firehose (M5).** Simulated couriers report GPS; Kafka partitions by shipment;
-  tracking-svc writes DynamoDB and pushes to the browser map over SSE.
+- **Tracking firehose (M5, built).** Ingest only appends to Kafka. A persister writes DynamoDB
+  with conditional puts, so duplicates and out-of-order reports cannot move a shipment
+  backwards. Every instance has its own live consumer group feeding SSE: history and then live
+  with no gap, `Last-Event-ID` resume, and a conflated ops map. At 20,000 reports/s on a
+  4-vCPU runner, ingest accepted all 660,000 reports. Coalescing the latest-position writes cut
+  shipment writes 4.4×.
 
 ## Measured so far
 
 Every number in this repository comes from running the code.
+
+**Chapter 05 (M5).** 2,000 to 20,000 courier reports per second on a 4-vCPU runner: ingest
+accepted every report at every step, and live push stayed at a median of tens of milliseconds.
+The persister fell minutes behind, because half of its writes were latest-position updates
+that are overwritten a second later. Coalescing them to one per shipment per 5 s cut those
+writes 4.4× and gave 2.4× the stored throughput. With DynamoDB paused for 20 s mid-run,
+couriers saw 0 errors and all 315,000 reports were stored exactly once.
+→ [docs/illustrated/05-the-courier-firehose.md](docs/illustrated/05-the-courier-firehose.md)
 
 **Chapter 04 (M4).** Four orders, four saga endings: confirmed, rejected for stock, payment
 failed (the hold released before the customer was told), and pending until a callback. A
@@ -169,7 +182,7 @@ docs/                 architecture and the illustrated walkthroughs
 | M2 | Orders: sharded Postgres, outbox, Debezium → Kafka, idempotency keys, CQRS read model | done |
 | M3 | Inventory: multi-FC stock, Redis gate + Postgres facts, reconciliation, bulkhead, 4-way benchmark | done |
 | M4 | Fulfillment: Temporal saga, delivery promise, payment failure injection | done |
-| M5 | Tracking: courier event firehose, DynamoDB, SSE | |
+| M5 | Tracking: courier event firehose, DynamoDB, SSE | done |
 | M6 | Web: storefront, live map, ops console | |
 | M7 | Resilience and observability: shedding, circuit breakers, tracing, SLO dashboards, chaos | |
 | M8 | Load test and delivery: Prime Day scenario, Helm on kind, AWS CDK | |

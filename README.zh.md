@@ -8,10 +8,11 @@
 技术上是 Java 25 + Spring Boot 4.1 的微服务。每个中间件都选的是能对应到 AWS 托管服务的那一款，
 所以同一套设计既能在装了 Docker 的笔记本上跑，也能部署到 AWS。
 
-> **当前进度：M4 已完成。** 在平台（M0）、商品目录（M1：两级缓存、Bloom 过滤器、OpenSearch、受保护的写操作）、
+> **当前进度：M5 已完成。** 在平台（M0）、商品目录（M1：两级缓存、Bloom 过滤器、OpenSearch、受保护的写操作）、
 > 订单（M2：16 分片、幂等、outbox → Debezium → Kafka、CQRS 读模型）和库存（M3：Redis Lua 闸门、Postgres 事实、对账器、舱壁）
 > 之上，每个下单都会跑一个 Temporal saga：预占 → 授权 → 确认库存 → 承诺送达日期 → 确认订单，每一步都有补偿，
-> 支付等待窗口是一个 15 分钟的 durable timer。
+> 支付等待窗口是一个 15 分钟的 durable timer。tracking-svc（M5）把快递员上报的洪峰写进 Kafka，
+> 再落到 DynamoDB，并通过 SSE 推给浏览器。
 > 见[路线图](#路线图)。
 
 ## 架构
@@ -70,12 +71,20 @@ Redis         + outbox       gRPC
 - **两级缓存（M1）。** Caffeine + Redis，用 pub/sub 广播失效。single-flight 防击穿，Bloom filter 防穿透，
   TTL 加抖动防雪崩。
 - **过载保护（M7）。** 网关上做令牌桶限流，再加上按延迟自适应调整的并发上限，过载时先丢低优先级流量。
-- **物流事件洪峰（M5）。** 模拟快递员上报 GPS，Kafka 按 shipment 分区，tracking-svc 写入 DynamoDB，
-  再通过 SSE 推到浏览器地图上。
+- **物流事件洪峰（M5，已实现）。** 写入接口只往 Kafka 追加。persister 用条件写入 DynamoDB，
+  重复或乱序的上报都不会让包裹状态倒退。每个实例有自己的 live 消费组，给 SSE 供数据：
+  先发历史、再接实时，中间不漏不重，支持 `Last-Event-ID` 断点续传；运营地图按 500 ms 合并成一帧。
+  在 4 vCPU 的 runner 上每秒 2 万条，660,000 条全部接收；"最新位置"写入合并后，shipment 写入次数降到原来的 1/4.4。
 
 ## 已经测出来的东西
 
 仓库里的每个数字都来自实际运行。
+
+**第 05 章（M5）。** 在 4 vCPU 的 runner 上，每秒 2,000 到 20,000 条快递上报：写入接口每一档都全部接收，
+实时推送的中位延迟只有几十毫秒。落库一度落后好几分钟，原因是一半的写入花在"最新位置"上，而这个值一秒后就会被覆盖。
+改成每个包裹每 5 秒最多写一次之后，这类写入降到 1/4.4，落库吞吐提高到 2.4 倍。压测中途把 DynamoDB 冻结 20 秒，
+快递端零报错，315,000 条上报全部恰好落库一次。
+→ [docs/illustrated/05-the-courier-firehose.md](docs/illustrated/05-the-courier-firehose.md)（英文）
 
 **第 04 章（M4）。** 四个订单走出 saga 的四种结局：确认、缺货拒绝、拒付（库存在通知用户之前就已释放）、
 PENDING 后回调确认。在 150 秒的支付等待期间把 worker `kill -9`，Temporal 事件历史里那 151 秒是空白，
@@ -147,7 +156,7 @@ docs/                 架构文档和图解
 | M2 | 订单：分片 Postgres、outbox、Debezium → Kafka、幂等键、CQRS 读模型 | 完成 |
 | M3 | 库存：多仓库存、Redis 闸门 + Postgres 事实、对账、舱壁、四种方案压测 | 完成 |
 | M4 | 履约：Temporal Saga、配送承诺、支付故障注入 | 完成 |
-| M5 | 物流追踪：快递事件洪峰、DynamoDB、SSE | |
+| M5 | 物流追踪：快递事件洪峰、DynamoDB、SSE | 完成 |
 | M6 | 前端：商城、实时地图、运维大盘 | |
 | M7 | 韧性与可观测：降载、熔断、链路追踪、SLO 大盘、混沌实验 | |
 | M8 | 压测与交付：Prime Day 场景、kind 上的 Helm、AWS CDK | |

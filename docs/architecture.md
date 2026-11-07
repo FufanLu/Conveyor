@@ -35,7 +35,7 @@ Redis         + outbox       gRPC
 | `order-svc` | 8082 | MVC + virtual threads | orders (sharded), idempotency keys, outbox, order read model | **M2 (built)** |
 | `inventory-svc` | 8083 (gRPC 9083) | MVC + gRPC on virtual threads | stock per FC, reservations | **M3 (built)** |
 | `fulfillment-svc` | 8084 | Temporal worker + Kafka starter | order saga, delivery promise | **M4 (built)** |
-| `tracking-svc` | 8085 | WebFlux | shipment events, live push | M5 |
+| `tracking-svc` | 8085 | WebFlux + Kafka + DynamoDB (SDK v2 async) | courier reports, shipments, live push (SSE) | **M5 (built)** |
 | `payment-mock` | 8086 | MVC + virtual threads | payment authorizations (simulated, failure injection) | **M4 (built)** |
 
 Each service owns its data. No service reads another service's database; they talk through
@@ -160,7 +160,7 @@ Details and measurements: [illustrated chapter 03](illustrated/03-ten-thousand-b
 | Event consumption | At-least-once delivery, idempotent consumers (**built in M2** for the read model) | Effectively-once without distributed transactions. |
 | Hot-SKU stock | Redis Lua gate + Postgres reservation rows, reconciled (**built in M3**) | Measured against a row lock, a conditional UPDATE and 16 bucket rows: the gate sold 10,000 units 4–6× faster with p99 in tens of ms, because no Postgres row is contended. |
 | Order reads | CQRS: OpenSearch read model fed by CDC (**built in M2**) | Search and ops queries never touch the sharded write path. |
-| Tracking events | DynamoDB, partition key = shipment id | Append-heavy, key-value access, scales by partition. |
+| Tracking events | DynamoDB, partition key = shipment id, sort key = seq (**built in M5**) | Append-heavy, key-value access, scales by partition. Conditional writes make duplicates and out-of-order delivery harmless; ingest never waits for the database (Kafka first). |
 
 ## Local infrastructure
 
