@@ -2,6 +2,12 @@
 spring:
   application:
     name: gateway
+  data:
+    redis:
+      host: ${CONVEYOR_REDIS_HOST:localhost}
+      port: 6379
+      timeout: 100ms
+      connect-timeout: 250ms
   security:
     oauth2:
       resourceserver:
@@ -32,12 +38,25 @@ spring:
                 - Path=/api/v1/products/**,/api/v1/search/**
               filters:
                 - StripPrefix=1
+                # Browsing: 50 requests/s per customer or address, bursts to 100.
+                - name: RequestRateLimiter
+                  args:
+                    key-resolver: "#{@principalOrAddress}"
+                    redis-rate-limiter.replenishRate: ${conveyor.gateway.rate.browse:50}
+                    redis-rate-limiter.burstCapacity: ${conveyor.gateway.rate.browse-burst:100}
             - id: orders
               uri: ${conveyor.upstreams.order}
               predicates:
                 - Path=/api/v1/orders/**
               filters:
                 - StripPrefix=1
+                # Orders: 10 requests/s per customer, bursts to 20 (the order page polls
+                # once a second; a script placing orders in a loop is what this stops).
+                - name: RequestRateLimiter
+                  args:
+                    key-resolver: "#{@principalOrAddress}"
+                    redis-rate-limiter.replenishRate: ${conveyor.gateway.rate.orders:10}
+                    redis-rate-limiter.burstCapacity: ${conveyor.gateway.rate.orders-burst:20}
             - id: ops-orders
               uri: ${conveyor.upstreams.order}
               predicates:
@@ -82,3 +101,16 @@ conveyor:
     order: http://localhost:8082
     fulfillment: http://localhost:8084
     tracking: http://localhost:8085
+  # Edge admission (LoadSheddingFilter): an adaptive concurrency limit shared by all routes;
+  # search may use 50 % of it, product pages 80 %, orders 100 %.
+  gateway:
+    shedding:
+      enabled: true
+      initial-limit: 64
+
+# Rate limiting fails open when Redis is down (every request allowed), so Redis is not a
+# reason to take the gateway out of rotation: its health indicator stays off.
+management:
+  health:
+    redis:
+      enabled: false

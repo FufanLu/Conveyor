@@ -19,6 +19,10 @@ on:
         description: Run the inventory-svc buyer burst
         type: boolean
         default: true
+      edge_overload:
+        description: Run the gateway overload experiment (shedding on vs off)
+        type: boolean
+        default: false
       tracking_firehose:
         description: Run the tracking-svc courier firehose
         type: boolean
@@ -166,3 +170,37 @@ jobs:
           path: |
             tracking-firehose-results.txt
             build/tracking-firehose/tracking.log
+
+  edge-overload:
+    name: gateway under overload
+    if: ${{ inputs.edge_overload }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      redis:
+        image: redis:8.8.4-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 2s --health-timeout 2s --health-retries 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - uses: gradle/actions/setup-gradle@v6
+
+      - run: ./gradlew :services:gateway:bootJar
+
+      - name: Overload, shedding on and off
+        run: tools/bench/edge-overload.sh | tee edge-overload-results.txt
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: edge-overload-results
+          path: |
+            edge-overload-results.txt
+            build/edge-overload/*.log
