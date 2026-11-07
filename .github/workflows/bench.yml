@@ -15,6 +15,17 @@ on:
         description: Run the four-strategy matrix (about 15 minutes)
         type: boolean
         default: true
+      service_burst:
+        description: Run the inventory-svc buyer burst
+        type: boolean
+        default: true
+      tracking_firehose:
+        description: Run the tracking-svc courier firehose
+        type: boolean
+        default: false
+      tracking_rates:
+        description: Firehose steps, reports per second
+        default: "2000 5000 10000 20000"
       buyers:
         description: Buyers in the service burst
         default: "10000"
@@ -71,6 +82,7 @@ jobs:
 
   service-burst:
     name: inventory-svc under a buyer burst
+    if: ${{ inputs.service_burst }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     services:
@@ -112,3 +124,41 @@ jobs:
           path: |
             service-burst-results.txt
             build/service-burst/inventory.log
+
+  tracking-firehose:
+    name: tracking-svc courier firehose
+    if: ${{ inputs.tracking_firehose }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    services:
+      kafka:
+        image: apache/kafka:4.4.0
+        # The image's built-in single-node defaults (any KAFKA_* variable would replace them all).
+        ports: ["9092:9092"]
+      dynamodb:
+        image: amazon/dynamodb-local:3.3.2
+        ports: ["8000:8000"]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - uses: gradle/actions/setup-gradle@v6
+
+      - run: ./gradlew :services:tracking-svc:bootJar
+
+      - name: Firehose
+        env:
+          RATES: ${{ inputs.tracking_rates }}
+        run: tools/bench/tracking-firehose.sh | tee tracking-firehose-results.txt
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: tracking-firehose-results
+          path: |
+            tracking-firehose-results.txt
+            build/tracking-firehose/tracking.log

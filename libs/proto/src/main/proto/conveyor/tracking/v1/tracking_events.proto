@@ -1,0 +1,54 @@
+syntax = "proto3";
+
+package conveyor.tracking.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option java_multiple_files = true;
+option java_outer_classname = "TrackingEventsProto";
+option java_package = "dev.conveyor.proto.tracking.v1";
+
+// Everything a courier's handheld reports, as published on the Kafka topic "tracking.events".
+//
+//   key   = shipment id (one shipment's events stay on one partition, in order)
+//   value = these bytes
+//
+// tracking-svc's ingest endpoint produces these; the persister writes them to DynamoDB and
+// every instance's live consumer fans them out to browsers over SSE.
+//
+// Delivery is at least once. (shipment_id, seq) identifies an event: the handheld numbers its
+// events per shipment, so a re-sent batch is recognized and dropped by a conditional write.
+message TrackingEvent {
+  string shipment_id = 1;
+  int64 seq = 2;
+  string courier_id = 3;
+  google.protobuf.Timestamp recorded_at = 4;
+
+  oneof body {
+    Position position = 10;
+    Scan scan = 11;
+  }
+}
+
+message Position {
+  double lat = 1;
+  double lon = 2;
+  // Metres per second, from the handheld's GNSS.
+  float speed = 3;
+}
+
+// A milestone scan on the package's barcode.
+message Scan {
+  ScanType type = 1;
+  // Where the scan happened: an FC id for PICKED / LOADED, empty otherwise.
+  string location = 2;
+}
+
+enum ScanType {
+  SCAN_TYPE_UNSPECIFIED = 0;
+  SCAN_TYPE_PICKED = 1;
+  SCAN_TYPE_LOADED = 2;
+  SCAN_TYPE_OUT_FOR_DELIVERY = 3;
+  SCAN_TYPE_DELIVERED = 4;
+  SCAN_TYPE_DELIVERY_FAILED = 5;
+}
