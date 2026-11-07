@@ -48,6 +48,12 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - run: docker compose -f deploy/compose/compose.yaml --profile full config --quiet
+      - name: SLO rules compile and their alert tests pass
+        run: |
+          docker run --rm -v "$PWD/deploy/compose/prometheus:/rules:ro" -w /rules --entrypoint promtool \
+            prom/prometheus:v3.16.0 check rules slo.rules.yml
+          docker run --rm -v "$PWD/deploy/compose/prometheus:/rules:ro" -w /rules --entrypoint promtool \
+            prom/prometheus:v3.16.0 test rules slo.rules.test.yml
 
   web:
     name: web (typecheck and build)

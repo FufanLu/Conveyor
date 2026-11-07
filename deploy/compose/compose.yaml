@@ -255,6 +255,7 @@ services:
     extra_hosts: ["host.docker.internal:host-gateway"]
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/slo.rules.yml:/etc/prometheus/slo.rules.yml:ro
       - prometheus-data:/prometheus
     healthcheck:
       <<: *healthcheck

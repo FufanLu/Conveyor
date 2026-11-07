@@ -4,6 +4,7 @@ import dev.conveyor.platform.web.RequestIds;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import java.nio.charset.StandardCharsets;
 import java.util.EnumMap;
 import java.util.Map;
@@ -40,9 +41,11 @@ public final class LoadSheddingFilter implements WebFilter, Ordered {
     private final AtomicInteger inflight = new AtomicInteger();
     private final Map<Priority, Counter> shed = new EnumMap<>(Priority.class);
     private final Map<Priority, Counter> admitted = new EnumMap<>(Priority.class);
+    private final MeterRegistry registry;
 
     public LoadSheddingFilter(Settings settings, MeterRegistry registry) {
         this.settings = settings;
+        this.registry = registry;
         this.limit = new AdaptiveLimit(
                 settings.initialLimit(), settings.minLimit(), settings.maxLimit(), settings.tolerance());
         Gauge.builder("gateway.concurrency.limit", limit, AdaptiveLimit::limit).register(registry);
@@ -78,17 +81,37 @@ public final class LoadSheddingFilter implements WebFilter, Ordered {
             return chain.filter(exchange);
         }
         int now = inflight.incrementAndGet();
+        long start = System.nanoTime();
         if (now > limit.limit() * priority.share) {
             inflight.decrementAndGet();
             shed.get(priority).increment();
+            record(priority, "shed", start);
             return reject(exchange, priority);
         }
         admitted.get(priority).increment();
-        long start = System.nanoTime();
         return chain.filter(exchange).doFinally(signal -> {
             int left = inflight.getAndDecrement();
             limit.sample(System.nanoTime() - start, left);
+            var status = exchange.getResponse().getStatusCode();
+            String outcome = status == null || status.is5xxServerError()
+                    ? "server_error"
+                    : status.is4xxClientError() ? "client_error" : "ok";
+            record(priority, outcome, start);
         });
+    }
+
+    /**
+     * The edge SLI: every upstream request by priority and outcome, with a histogram bucket at
+     * the 300 ms latency objective. deploy/compose/prometheus/slo.rules.yml builds the SLOs on it.
+     */
+    private void record(Priority priority, String outcome, long startNanos) {
+        Timer.builder("gateway.edge.requests")
+                .tag("priority", priority.name().toLowerCase(java.util.Locale.ROOT))
+                .tag("outcome", outcome)
+                .serviceLevelObjectives(java.time.Duration.ofMillis(300))
+                .publishPercentileHistogram()
+                .register(registry)
+                .record(System.nanoTime() - startNanos, java.util.concurrent.TimeUnit.NANOSECONDS);
     }
 
     private static Mono<Void> reject(ServerWebExchange exchange, Priority priority) {

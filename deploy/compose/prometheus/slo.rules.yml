@@ -1,0 +1,77 @@
+# Service level objectives, measured at the edge (gateway_edge_requests_seconds, recorded by the
+# gateway's LoadSheddingFilter for every upstream request, by priority and outcome).
+#
+#   checkout  priority="critical" (orders): 99.9 % answered without a 5xx or a shed,
+#             99 % of the good ones within 300 ms.          30-day error budget: 0.1 % / 1 %
+#   browse    priority=~"normal|sheddable" (products, search): 99 % without a 5xx or a shed.
+#             Shedding browse traffic is designed degradation, so its budget is larger.
+#
+# Alerts follow the multi-window, multi-burn-rate recipe (Google SRE Workbook, ch. 5): page when
+# the budget burns 14.4x too fast over 1 h (2 % of a 30-day budget gone) and is still burning
+# over the last 5 min; open a ticket at 6x over 6 h confirmed over 30 min.
+groups:
+  - name: conveyor-slo-recording
+    interval: 30s
+    rules:
+      - record: slo:edge_requests:rate5m
+        expr: sum by (priority, outcome) (rate(gateway_edge_requests_seconds_count[5m]))
+      # error ratio = (5xx + shed) / all, per SLO and window
+      - record: slo:checkout_errors:ratio_rate5m
+        expr: |
+          sum(rate(gateway_edge_requests_seconds_count{priority="critical",outcome=~"server_error|shed"}[5m]))
+          / sum(rate(gateway_edge_requests_seconds_count{priority="critical"}[5m]))
+      - record: slo:checkout_errors:ratio_rate30m
+        expr: |
+          sum(rate(gateway_edge_requests_seconds_count{priority="critical",outcome=~"server_error|shed"}[30m]))
+          / sum(rate(gateway_edge_requests_seconds_count{priority="critical"}[30m]))
+      - record: slo:checkout_errors:ratio_rate1h
+        expr: |
+          sum(rate(gateway_edge_requests_seconds_count{priority="critical",outcome=~"server_error|shed"}[1h]))
+          / sum(rate(gateway_edge_requests_seconds_count{priority="critical"}[1h]))
+      - record: slo:checkout_errors:ratio_rate6h
+        expr: |
+          sum(rate(gateway_edge_requests_seconds_count{priority="critical",outcome=~"server_error|shed"}[6h]))
+          / sum(rate(gateway_edge_requests_seconds_count{priority="critical"}[6h]))
+      # latency: share of good checkout requests slower than 300 ms
+      - record: slo:checkout_slow:ratio_rate5m
+        expr: |
+          1 - sum(rate(gateway_edge_requests_seconds_bucket{priority="critical",outcome="ok",le="0.3"}[5m]))
+            / sum(rate(gateway_edge_requests_seconds_count{priority="critical",outcome="ok"}[5m]))
+      - record: slo:checkout_slow:ratio_rate1h
+        expr: |
+          1 - sum(rate(gateway_edge_requests_seconds_bucket{priority="critical",outcome="ok",le="0.3"}[1h]))
+            / sum(rate(gateway_edge_requests_seconds_count{priority="critical",outcome="ok"}[1h]))
+      - record: slo:browse_errors:ratio_rate5m
+        expr: |
+          sum(rate(gateway_edge_requests_seconds_count{priority=~"normal|sheddable",outcome=~"server_error|shed"}[5m]))
+          / sum(rate(gateway_edge_requests_seconds_count{priority=~"normal|sheddable"}[5m]))
+      - record: slo:browse_errors:ratio_rate1h
+        expr: |
+          sum(rate(gateway_edge_requests_seconds_count{priority=~"normal|sheddable",outcome=~"server_error|shed"}[1h]))
+          / sum(rate(gateway_edge_requests_seconds_count{priority=~"normal|sheddable"}[1h]))
+
+  - name: conveyor-slo-alerts
+    rules:
+      - alert: CheckoutErrorBudgetBurnFast
+        expr: slo:checkout_errors:ratio_rate1h > (14.4 * 0.001) and slo:checkout_errors:ratio_rate5m > (14.4 * 0.001)
+        labels: { severity: page, slo: checkout-availability }
+        annotations:
+          summary: Checkout is failing or shedding {{ $value | humanizePercentage }} of orders (budget 0.1 %).
+          runbook: docs/runbooks/checkout-availability.md
+      - alert: CheckoutErrorBudgetBurnSlow
+        expr: slo:checkout_errors:ratio_rate6h > (6 * 0.001) and slo:checkout_errors:ratio_rate30m > (6 * 0.001)
+        labels: { severity: ticket, slo: checkout-availability }
+        annotations:
+          summary: Checkout errors have burned the budget 6x too fast for 6 hours.
+          runbook: docs/runbooks/checkout-availability.md
+      - alert: CheckoutLatencyBudgetBurnFast
+        expr: slo:checkout_slow:ratio_rate1h > (14.4 * 0.01) and slo:checkout_slow:ratio_rate5m > (14.4 * 0.01)
+        labels: { severity: page, slo: checkout-latency }
+        annotations:
+          summary: "{{ $value | humanizePercentage }} of checkout requests take longer than 300 ms (budget 1 %)."
+          runbook: docs/runbooks/checkout-availability.md
+      - alert: BrowseErrorBudgetBurnFast
+        expr: slo:browse_errors:ratio_rate1h > (14.4 * 0.01) and slo:browse_errors:ratio_rate5m > (14.4 * 0.01)
+        labels: { severity: ticket, slo: browse-availability }
+        annotations:
+          summary: Browsing is being shed or failing for {{ $value | humanizePercentage }} of requests.

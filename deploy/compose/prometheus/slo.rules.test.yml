@@ -1,0 +1,68 @@
+# promtool test rules slo.rules.test.yml: the burn-rate alerts fire when they should and stay
+# quiet when they should. Series are cumulative counters sampled once a minute.
+rule_files:
+  - slo.rules.yml
+
+evaluation_interval: 30s
+
+tests:
+  # 5 % of checkout requests fail: 50x the 0.1 % budget. Pages within the hour.
+  - interval: 1m
+    input_series:
+      - series: 'gateway_edge_requests_seconds_count{priority="critical",outcome="ok"}'
+        values: '0+950x120'
+      - series: 'gateway_edge_requests_seconds_count{priority="critical",outcome="server_error"}'
+        values: '0+50x120'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: CheckoutErrorBudgetBurnFast
+        exp_alerts:
+          - exp_labels: { severity: page, slo: checkout-availability }
+            exp_annotations:
+              summary: Checkout is failing or shedding 5% of orders (budget 0.1 %).
+              runbook: docs/runbooks/checkout-availability.md
+      - eval_time: 70m
+        alertname: CheckoutErrorBudgetBurnSlow
+        exp_alerts: []   # the 6 h window has not seen enough yet
+
+  # Shedding counts against checkout too: 3 % of orders shed.
+  - interval: 1m
+    input_series:
+      - series: 'gateway_edge_requests_seconds_count{priority="critical",outcome="ok"}'
+        values: '0+970x120'
+      - series: 'gateway_edge_requests_seconds_count{priority="critical",outcome="shed"}'
+        values: '0+30x120'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: CheckoutErrorBudgetBurnFast
+        exp_alerts:
+          - exp_labels: { severity: page, slo: checkout-availability }
+            exp_annotations:
+              summary: Checkout is failing or shedding 3% of orders (budget 0.1 %).
+              runbook: docs/runbooks/checkout-availability.md
+
+  # 0.05 % errors: inside the budget, nobody is paged.
+  - interval: 1m
+    input_series:
+      - series: 'gateway_edge_requests_seconds_count{priority="critical",outcome="ok"}'
+        values: '0+9995x120'
+      - series: 'gateway_edge_requests_seconds_count{priority="critical",outcome="server_error"}'
+        values: '0+5x120'
+    alert_rule_test:
+      - eval_time: 90m
+        alertname: CheckoutErrorBudgetBurnFast
+        exp_alerts: []
+
+  # A two-minute blip at 30 % errors after an hour of health: the 5 m window spikes to ~12 %,
+  # but the 1 h window sees 600 errors in ~62,000 requests (1 %, under 1.44 %), so the
+  # multi-window rule does not page for a blip.
+  - interval: 1m
+    input_series:
+      - series: 'gateway_edge_requests_seconds_count{priority="critical",outcome="ok"}'
+        values: '0+1000x60 60700+700x1 62400+1000x20'
+      - series: 'gateway_edge_requests_seconds_count{priority="critical",outcome="server_error"}'
+        values: '0+0x60 300+300x1 600+0x20'
+    alert_rule_test:
+      - eval_time: 63m
+        alertname: CheckoutErrorBudgetBurnFast
+        exp_alerts: []
