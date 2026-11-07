@@ -16,7 +16,7 @@ class LoadSheddingFilterTest {
 
     private final SimpleMeterRegistry meters = new SimpleMeterRegistry();
     private final LoadSheddingFilter filter =
-            new LoadSheddingFilter(new LoadSheddingFilter.Settings(true, 10, 4, 100, 1.5), meters);
+            new LoadSheddingFilter(new LoadSheddingFilter.Settings(true, 20, 4, 100, 1.5), meters);
     private final List<Sinks.Empty<Void>> held = new ArrayList<>();
 
     /** Sends a request through the filter to an upstream that does not answer until released. */
@@ -33,10 +33,10 @@ class LoadSheddingFilterTest {
     }
 
     @Test
-    void searchIsShedAtHalfTheLimitWhileOrdersStillGetIn() {
-        // limit 10: search may hold 5 slots, product pages 8, orders 10
+    void searchIsShedFirstWhileOrdersStillGetIn() {
+        // limit 20: search may hold 8 slots (40 %), product pages 12 (60 %), orders 20
         List<MockServerWebExchange> searches = new ArrayList<>();
-        for (int i = 0; i < 7; i++) {
+        for (int i = 0; i < 10; i++) {
             searches.add(
                     send(MockServerHttpRequest.get("/api/v1/search?q=kettle").build()));
         }
@@ -44,17 +44,16 @@ class LoadSheddingFilterTest {
 
         var product =
                 send(MockServerHttpRequest.get("/api/v1/products/B0DEE0D8F5").build());
-        var order1 = send(MockServerHttpRequest.post("/api/v1/orders").build());
-        var order2 = send(MockServerHttpRequest.post("/api/v1/orders").build());
-        var order3 = send(MockServerHttpRequest.get("/api/v1/orders/1").build());
-        var order4 = send(MockServerHttpRequest.get("/api/v1/orders/2").build());
-        var order5 = send(MockServerHttpRequest.get("/api/v1/orders/3").build());
+        assertThat(shed(product)).isFalse(); // 9th slot, under 12
 
-        assertThat(shed(product)).isFalse(); // 6th slot, under 8
-        // orders take slots 7..10; the 11th request is over the limit even for orders
-        assertThat(List.of(order1, order2, order3, order4)).noneMatch(LoadSheddingFilterTest::shed);
-        assertThat(shed(order5)).isTrue();
-        // a product page is shed long before that: 10 of 10 are taken, it may use 8
+        List<MockServerWebExchange> orders = new ArrayList<>();
+        for (int i = 0; i < 12; i++) {
+            orders.add(send(MockServerHttpRequest.get("/api/v1/orders/" + i).build()));
+        }
+        // orders take slots 10..20; the 21st request is over the limit even for orders
+        assertThat(orders.subList(0, 11)).noneMatch(LoadSheddingFilterTest::shed);
+        assertThat(shed(orders.getLast())).isTrue();
+        // a product page is shed long before that: 20 of 20 are taken, it may use 12
         assertThat(shed(send(MockServerHttpRequest.get("/api/v1/products/B0X").build())))
                 .isTrue();
         assertThat(searches.getLast().getResponse().getHeaders().getFirst("Retry-After"))
@@ -70,7 +69,7 @@ class LoadSheddingFilterTest {
 
     @Test
     void finishedRequestsFreeTheirSlots() {
-        for (int i = 0; i < 5; i++) {
+        for (int i = 0; i < 8; i++) {
             send(MockServerHttpRequest.get("/api/v1/search").build());
         }
         assertThat(shed(send(MockServerHttpRequest.get("/api/v1/search").build())))
@@ -97,7 +96,7 @@ class LoadSheddingFilterTest {
 
     @Test
     void shedRequestsGetAProblemBodyAndCostNoUpstreamCall() {
-        for (int i = 0; i < 5; i++) {
+        for (int i = 0; i < 8; i++) {
             send(MockServerHttpRequest.get("/api/v1/search").build());
         }
         MockServerWebExchange exchange = MockServerWebExchange.from(

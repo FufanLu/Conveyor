@@ -9,4 +9,7 @@ public record CatalogProperties(
         @DefaultValue("http://localhost:8081") String url,
         @DefaultValue("500ms") Duration connectTimeout,
         @DefaultValue("1s") Duration readTimeout,
-        @DefaultValue("1500ms") Duration quoteBudget) {}
+        @DefaultValue("1500ms") Duration quoteBudget,
+        @DefaultValue("20") int breakerMinimumCalls,
+        @DefaultValue("50") float breakerFailureRatePercent,
+        @DefaultValue("5s") Duration breakerOpenFor) {}

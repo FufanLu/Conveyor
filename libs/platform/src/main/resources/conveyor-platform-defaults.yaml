@@ -3,6 +3,13 @@
 # application.yaml, with environment variables, or on the command line.
 
 spring:
+  kafka:
+    # Trace context rides in Kafka record headers: a consumer's span continues the producer's
+    # trace (orders.events from order-svc to fulfillment-svc and tracking-svc).
+    template:
+      observation-enabled: true
+    listener:
+      observation-enabled: true
   threads:
     virtual:
       # Blocking servlet code runs on virtual threads, so a slow downstream call parks a cheap
@@ -34,6 +41,24 @@ management:
   observations:
     key-values:
       application: ${spring.application.name}
+  # Traces: every HTTP server/client call, Kafka send/receive, gRPC call and JDBC... that
+  # Micrometer observes becomes an OpenTelemetry span, exported over OTLP. Export is off unless
+  # CONVEYOR_TRACING_EXPORT=true (compose profile "obs" runs Jaeger on :4318), so a service
+  # started without a collector does not log export failures.
+  tracing:
+    sampling:
+      probability: ${CONVEYOR_TRACING_SAMPLING:1.0}
+    export:
+      enabled: ${CONVEYOR_TRACING_EXPORT:false}
+  opentelemetry:
+    tracing:
+      export:
+        otlp:
+          endpoint: ${CONVEYOR_OTLP_ENDPOINT:http://localhost:4318/v1/traces}
+  otlp:
+    logging:
+      export:
+        enabled: false
   metrics:
     distribution:
       # Export real histogram buckets so P99 is computed server-side with histogram_quantile(),
@@ -43,4 +68,5 @@ management:
 
 logging:
   pattern:
-    correlation: "[%X{requestId:-}] "
+    # request id (ours, stable across retries) and trace id (OpenTelemetry), both searchable
+    correlation: "[%X{requestId:-} %X{traceId:-}] "

@@ -6,6 +6,8 @@ import dev.conveyor.fulfillment.workflow.OrderFulfillmentWorkflow;
 import dev.conveyor.proto.inventory.v1.InventoryServiceGrpc;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
+import io.micrometer.core.instrument.binder.grpc.ObservationGrpcClientInterceptor;
+import io.micrometer.observation.ObservationRegistry;
 import io.temporal.client.WorkflowClient;
 import io.temporal.client.WorkflowClientOptions;
 import io.temporal.serviceclient.WorkflowServiceStubs;
@@ -46,23 +48,29 @@ class TemporalConfiguration {
     }
 
     @Bean(destroyMethod = "shutdownNow")
-    ManagedChannel inventoryChannel(FulfillmentProperties p) {
+    ManagedChannel inventoryChannel(FulfillmentProperties p, ObservationRegistry observations) {
         return ManagedChannelBuilder.forTarget(p.inventoryTarget())
                 .usePlaintext()
+                // Reserve / Commit / Release become client spans in the order's trace.
+                .intercept(new ObservationGrpcClientInterceptor(observations))
                 .build();
     }
 
-    private static RestClient http(String baseUrl) {
+    private static RestClient http(RestClient.Builder builder, String baseUrl) {
         JdkClientHttpRequestFactory factory = new JdkClientHttpRequestFactory(
                 HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(2)).build());
         factory.setReadTimeout(Duration.ofSeconds(5));
-        return RestClient.builder().baseUrl(baseUrl).requestFactory(factory).build();
+        return builder.clone().baseUrl(baseUrl).requestFactory(factory).build();
     }
 
     @Bean
-    FulfillmentActivitiesImpl fulfillmentActivities(ManagedChannel inventoryChannel, FulfillmentProperties p) {
+    FulfillmentActivitiesImpl fulfillmentActivities(
+            ManagedChannel inventoryChannel, FulfillmentProperties p, RestClient.Builder builder) {
         return new FulfillmentActivitiesImpl(
-                InventoryServiceGrpc.newBlockingStub(inventoryChannel), http(p.paymentUrl()), http(p.orderUrl()), p);
+                InventoryServiceGrpc.newBlockingStub(inventoryChannel),
+                http(builder, p.paymentUrl()),
+                http(builder, p.orderUrl()),
+                p);
     }
 
     @Bean

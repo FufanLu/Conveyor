@@ -4,6 +4,12 @@ import dev.conveyor.order.application.Pricing;
 import dev.conveyor.order.application.PricingUnavailableException;
 import dev.conveyor.order.application.UnknownSkusException;
 import dev.conveyor.platform.web.RequestIds;
+import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
+import io.github.resilience4j.circuitbreaker.CircuitBreaker;
+import io.github.resilience4j.circuitbreaker.CircuitBreakerConfig;
+import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
+import io.github.resilience4j.micrometer.tagged.TaggedCircuitBreakerMetrics;
+import io.micrometer.core.instrument.MeterRegistry;
 import java.net.http.HttpClient;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -27,6 +33,13 @@ import org.springframework.web.client.RestClient;
  * Prices an order by reading every SKU from catalog-svc in parallel (one virtual thread per
  * SKU), within one overall time budget. catalog-svc answers from its cache, so this is cheap;
  * when it is slow or down the order is refused with 503 rather than priced from stale data.
+ *
+ * <p>A circuit breaker sits in front: once half of the last calls (at least 20) failed or ran
+ * past 80 % of the budget, it opens for 5 s and every order is refused at once, instead of each
+ * one holding a request thread for the full 1.5 s budget while catalog is down. That keeps
+ * order-svc's own capacity for the requests that do not need pricing (order status, the saga's
+ * status updates) and stops piling load on a struggling catalog. After 5 s, five trial calls
+ * decide whether it closes again.
  */
 @Component
 @EnableConfigurationProperties(CatalogProperties.class)
@@ -37,14 +50,34 @@ class CatalogPricing implements Pricing, AutoCloseable {
     private final ExecutorService lookups = Executors.newThreadPerTaskExecutor(
             Thread.ofVirtual().name("catalog-quote-", 0).factory());
 
-    CatalogPricing(CatalogProperties properties) {
+    private final CircuitBreaker breaker;
+
+    CatalogPricing(CatalogProperties properties, MeterRegistry registry, RestClient.Builder builder) {
         this.properties = properties;
+        CircuitBreakerRegistry breakers = CircuitBreakerRegistry.of(CircuitBreakerConfig.custom()
+                .slidingWindowType(CircuitBreakerConfig.SlidingWindowType.COUNT_BASED)
+                .slidingWindowSize(50)
+                .minimumNumberOfCalls(properties.breakerMinimumCalls())
+                .failureRateThreshold(properties.breakerFailureRatePercent())
+                .slowCallDurationThreshold(
+                        properties.quoteBudget().multipliedBy(4).dividedBy(5))
+                .slowCallRateThreshold(properties.breakerFailureRatePercent())
+                .waitDurationInOpenState(properties.breakerOpenFor())
+                .permittedNumberOfCallsInHalfOpenState(5)
+                .automaticTransitionFromOpenToHalfOpenEnabled(true)
+                // An unknown SKU is the customer's mistake, not catalog failing.
+                .ignoreExceptions(UnknownSkusException.class)
+                .build());
+        this.breaker = breakers.circuitBreaker("catalog");
+        // resilience4j_circuitbreaker_state{name="catalog",state=...}, _calls_seconds, _not_permitted_calls
+        TaggedCircuitBreakerMetrics.ofCircuitBreakerRegistry(breakers).bindTo(registry);
         JdkClientHttpRequestFactory factory = new JdkClientHttpRequestFactory(HttpClient.newBuilder()
                 .connectTimeout(properties.connectTimeout())
                 .version(HttpClient.Version.HTTP_1_1)
                 .build());
         factory.setReadTimeout(properties.readTimeout());
-        this.http = RestClient.builder()
+        // Spring's builder carries the observation registry: catalog calls join the trace.
+        this.http = builder.clone()
                 .baseUrl(properties.url())
                 .requestFactory(factory)
                 .build();
@@ -56,6 +89,22 @@ class CatalogPricing implements Pricing, AutoCloseable {
 
     @Override
     public Map<String, Quote> quote(Collection<String> skus) {
+        try {
+            return breaker.executeCallable(() -> quoteNow(skus));
+        } catch (CallNotPermittedException e) {
+            throw new PricingUnavailableException("catalog circuit open; not calling it for a moment", e);
+        } catch (RuntimeException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new PricingUnavailableException("pricing failed", e);
+        }
+    }
+
+    CircuitBreaker.State breakerState() {
+        return breaker.getState();
+    }
+
+    private Map<String, Quote> quoteNow(Collection<String> skus) {
         String requestId = MDC.get(RequestIds.MDC_KEY); // MDC does not follow us into other threads
         Map<String, Future<Optional<CatalogProduct>>> pending = new LinkedHashMap<>();
         for (String sku : skus) {

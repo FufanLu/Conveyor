@@ -11,6 +11,8 @@ dependencies {
     implementation(project(":libs:platform"))
     implementation("org.springframework.boot:spring-boot-starter-actuator")
     implementation("org.springframework.boot:spring-boot-starter-micrometer-metrics")
+    // Traces: Micrometer Observation -> OpenTelemetry -> OTLP (Jaeger locally, X-Ray/ADOT in AWS).
+    implementation("org.springframework.boot:spring-boot-starter-opentelemetry")
     runtimeOnly("io.micrometer:micrometer-registry-prometheus")
 
     testImplementation("org.springframework.boot:spring-boot-starter-test")

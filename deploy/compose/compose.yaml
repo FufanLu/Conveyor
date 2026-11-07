@@ -261,6 +261,14 @@ services:
       test: ["CMD-SHELL", "wget -qO- http://localhost:9090/-/ready > /dev/null"]
     mem_limit: 384m
 
+  # Traces: Jaeger v2 takes OTLP over HTTP on 4318 and serves its UI on 16686. Services export
+  # to it when started with CONVEYOR_TRACING_EXPORT=true.
+  jaeger:
+    image: jaegertracing/jaeger:2.10.0
+    profiles: [obs, full]
+    ports: ["4318:4318", "16686:16686"]
+    mem_limit: 256m
+
   grafana:
     image: grafana/grafana:13.3.0
     profiles: [obs, full]

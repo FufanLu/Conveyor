@@ -5,14 +5,14 @@ import org.springframework.http.server.reactive.ServerHttpRequest;
 
 /**
  * Who gets the last slots. Under overload the edge sheds browsing before buying: search may use
- * half of the concurrency limit, product pages 80 %, and orders all of it. A customer who is
+ * 40 % of the concurrency limit, product pages 60 %, and orders all of it. A customer who is
  * already checking out is worth more than a new search, and a search retried in a second costs
  * the business nothing.
  */
 public enum Priority {
     CRITICAL(1.0),
-    NORMAL(0.8),
-    SHEDDABLE(0.5),
+    NORMAL(0.6),
+    SHEDDABLE(0.4),
     /** Long-lived streams (SSE): never counted, they would hold a slot for minutes. */
     UNLIMITED(Double.POSITIVE_INFINITY);
 

@@ -54,4 +54,18 @@ class AdaptiveLimitTest {
         }
         assertThat(limit.limit()).isGreaterThan(low * 3);
     }
+
+    @Test
+    void sustainedQueueingNeverBecomesTheBaselineAtHighRequestRates() {
+        AdaptiveLimit limit = new AdaptiveLimit(64, 8, 1000, 2.0);
+        long now = 0;
+        for (int i = 0; i < 2_000; i++) {
+            limit.sample(20 * MS, limit.limit(), now += 2_500_000); // 400 req/s, 20 ms baseline
+        }
+        // 20 s at 400 req/s of 100 ms queueing: the old per-request drift took the limit to 1000
+        for (int i = 0; i < 8_000; i++) {
+            limit.sample(100 * MS, limit.limit(), now += 2_500_000);
+        }
+        assertThat(limit.limit()).isLessThan(64);
+    }
 }
