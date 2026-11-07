@@ -16,6 +16,8 @@ opensearch-java = "3.10.0"
 temporal = "1.40.0"
 aws-sdk = "2.57.10"
 resilience4j = "2.4.0"
+aws-cdk = "2.275.0"
+constructs = "10.8.1"
 
 [libraries]
 spring-boot-dependencies = { module = "org.springframework.boot:spring-boot-dependencies", version.ref = "spring-boot" }
@@ -29,6 +31,8 @@ temporal-testing = { module = "io.temporal:temporal-testing", version.ref = "tem
 protobuf-java-util = { module = "com.google.protobuf:protobuf-java-util", version.ref = "protobuf" }
 resilience4j-circuitbreaker = { module = "io.github.resilience4j:resilience4j-circuitbreaker", version.ref = "resilience4j" }
 resilience4j-micrometer = { module = "io.github.resilience4j:resilience4j-micrometer", version.ref = "resilience4j" }
+aws-cdk-lib = { module = "software.amazon.awscdk:aws-cdk-lib", version.ref = "aws-cdk" }
+constructs = { module = "software.constructs:constructs", version.ref = "constructs" }
 aws-sdk-bom = { module = "software.amazon.awssdk:bom", version.ref = "aws-sdk" }
 protoc = { module = "com.google.protobuf:protoc", version.ref = "protobuf" }
 protoc-gen-grpc-java = { module = "io.grpc:protoc-gen-grpc-java", version.ref = "grpc" }

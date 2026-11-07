@@ -30,4 +30,5 @@ include(
     ":services:fulfillment-svc",
     ":services:tracking-svc",
     ":services:payment-mock",
+    ":deploy:cdk",
 )
