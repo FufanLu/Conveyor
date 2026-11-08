@@ -549,6 +549,100 @@
           "mode": "multi"
         }
       }
+    },
+    {
+      "type": "timeseries",
+      "title": "Deal waiting room: in line, admitted, admission rate",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 29,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (deal) (deal_waiting)",
+          "legendFormat": "{{deal}} in line"
+        },
+        {
+          "refId": "B",
+          "expr": "max by (deal) (deal_admitted)",
+          "legendFormat": "{{deal}} admitted"
+        },
+        {
+          "refId": "C",
+          "expr": "max by (deal) (deal_admission_rate)",
+          "legendFormat": "{{deal}} admissions/s"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Checkout lanes: deal vs regular, by outcome",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 29,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (lane, outcome) (rate(gateway_edge_requests_seconds_count{priority=\"critical\"}[1m]))",
+          "legendFormat": "{{lane}} {{outcome}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
     }
   ],
   "editable": false,

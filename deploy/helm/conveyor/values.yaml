@@ -102,5 +102,12 @@ services:
 statefulWorkers:
   order-svc: CONVEYOR_ORDER_WORKER_ID
 
+# Deals sold through the gateway's waiting room. gateway and order-svc both need the HMAC secret
+# (from a Secret you create: kubectl create secret generic conveyor-deals --from-literal=secret=…)
+# and the deal list. Empty secretName: no deals, the waiting room is off.
+deals:
+  secretName: ""
+  items: []   # e.g. [{ id: lightning-1, sku: B09E3779B1, units: 6000 }]
+
 smoke:
   image: curlimages/curl:8.10.1

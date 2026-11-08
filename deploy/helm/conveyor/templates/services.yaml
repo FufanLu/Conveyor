@@ -41,6 +41,16 @@ spec:
             {{- range $k, $v := $s.env }}
             - { name: {{ $k }}, value: {{ tpl $v $root | quote }} }
             {{- end }}
+            {{- if and $root.Values.deals.secretName (has $name (list "gateway" "order-svc")) }}
+            - name: CONVEYOR_DEALS_SECRET
+              valueFrom:
+                secretKeyRef: { name: {{ $root.Values.deals.secretName }}, key: secret }
+            {{- range $i, $d := $root.Values.deals.items }}
+            - { name: CONVEYOR_DEALS_ITEMS_{{ $i }}_ID, value: {{ $d.id | quote }} }
+            - { name: CONVEYOR_DEALS_ITEMS_{{ $i }}_SKU, value: {{ $d.sku | quote }} }
+            - { name: CONVEYOR_DEALS_ITEMS_{{ $i }}_UNITS, value: {{ $d.units | quote }} }
+            {{- end }}
+            {{- end }}
             {{- if $stateful }}
             - name: {{ index $root.Values.statefulWorkers $name }}
               valueFrom:
