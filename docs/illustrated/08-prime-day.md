@@ -101,7 +101,96 @@ with the endpoints from the stack's outputs.
 
 ## 3. Prime Day on one machine
 
-<!-- results below -->
+`tools/loadtest/prime-day.sh` brings up the whole platform on one 4-vCPU runner. That is all
+the compose middleware plus the seven service JVMs, the same stack as the M7 end-to-end run.
+`PrimeDay.java` then sends load through the gateway as real customers:
+
+- **Customers.** 200 are created through Keycloak's admin API and signed in.
+- **Load.** It is open loop: requests go out on schedule whether or not earlier ones finished,
+  as real traffic does. Browsing and regular orders run throughout, at different rates per
+  phase:
+
+| Phase | Length | Browse | Regular orders | Deal |
+|---|---|---|---|---|
+| warm | 60 s | 40/s | 4/s | — |
+| deal | 60 s | 80/s | 4/s | 7,000 buyers for a 6,000-unit SKU: 117/s |
+| peak | 120 s | 120/s | 15/s | — |
+| recover | 60 s | 40/s | 4/s | — |
+
+Simulated couriers report the whole time. The verdict then comes from the platform itself:
+deal orders by final status from the ops order search, the deal SKU's stock from inventory-svc,
+and the SLOs from Prometheus.
+
+### What one machine did
+
+Four runs; the third failed in its own setup. The first exposed two problems in the harness,
+not the platform:
+
+- it browsed anonymously from one address, so the per-address rate limit (50/s) answered 429
+  to the whole crowd;
+- its warm phase overlapped Keycloak hashing 200 passwords.
+
+Both were fixed for the later runs. The fourth run used a tenth of the courier load, to find
+out how much of the machine the firehose was using.
+
+| | Run 2: 2,000 couriers (≈2,000 reports/s) | Run 4: 200 couriers |
+|---|---:|---:|
+| Deal buyers / accepted / confirmed | 7,000 / 811 / 811 | 7,000 / 1,481 / 1,481 |
+| Deal stock afterwards (6,000 − confirmed) | 5,189 | 4,519 |
+| Peak-phase orders answered 201 | 1,711 of 1,800 | **1,800 of 1,800** |
+| Checkout availability (SLO 99.9 %) | 31.5 % | 39.9 % |
+| Checkout under 300 ms (SLO 99 %) | 51.4 % | 77.0 % |
+| Checkout p99 at the edge | 1,882 ms | 906 ms |
+| Recovery phase: orders / browsing OK | 100 % / 83–95 % | 100 % / 99.7 % |
+| Saga backlog drained after load ended | 1 s | 107 s |
+| Burn-rate alerts | 2 pages, 2 tickets | 1 page, 2 tickets |
+
+### Reading it
+
+**Correctness held under every run.** Every deal order the platform accepted was confirmed by
+the saga. The stock left afterwards was exactly 6,000 minus the confirmed count, in every run:
+nothing was sold twice, and no hold was lost. Every customer who did not get through got a
+fast 503 with `Retry-After`. No one waited out a timeout.
+
+**Capacity did not.** The deal asks for 117 orders a second. On a single shared box, with every
+database, broker, search engine, workflow engine and service JVM on the same four vCPUs, the
+platform confirms about 25. The gateway shed the difference, and because orders are checkout
+traffic, those sheds count against the 99.9 % objective. The SLO failed, the dashboards showed
+it, and the burn-rate rules paged within minutes, as M7 designed them to. The run measures
+the edge of one machine, not of the design.
+
+**The firehose matters on a shared box.** Cutting the couriers from 2,000 to 200 shipments
+nearly doubled the deal orders accepted (811 to 1,481). Peak-phase orders went from 95 % to
+100 %, and checkout p99 halved. In production, tracking runs on its own pods with DynamoDB and
+MSK as managed services. The prime-day sizing in the CDK stack gives the cluster 6–40 nodes
+instead of one.
+
+**The saga is the next bottleneck.** In run 4, 1,481 deal sagas plus the regular orders took
+107 s after the load stopped to finish. The Temporal dev server keeps its history in SQLite in
+a single process. Temporal Cloud, or a proper Temporal cluster on Postgres or Cassandra, is the
+production answer.
+
+**What a real deal day needs that this does not have.** A **virtual waiting room** in front of
+the deal: hand out places in line at the edge and admit buyers at the rate the platform can
+confirm, instead of turning 80 % of them away with a 503. Also **per-route admission**, so that
+a deal on one SKU cannot use up the order capacity that regular checkout needs. Here, during
+the deal, regular orders were shed along with the deal (35 of 240 accepted in run 4), because both are
+"critical" and share one limit. These are the first two items for whatever comes after M8.
+
+### The firehose run, phase by phase (run 2)
+
+```
+  warm     order    sent    240  {-1=23, 201=171, 503=46}     p50 621.5 p99 2495.2 ms
+  deal     deal     sent   7000  {201=811, 503=6189}          p50 576.8 p99 1913.3 ms
+  deal     search   sent   2861  {200=2, 503=2859}
+  peak     order    sent   1800  {-1=30, 201=1711, 503=59}    p50 259.2 p99 9563.2 ms
+  recover  order    sent    240  {201=240}                    p50  58.2 p99  262.3 ms
+couriers: 1,960 reports/s accepted, 0 errors; 321,502 of 748,930 stored by the end (DynamoDB Local)
+```
+
+During the deal, search was shed almost entirely (2 of 2,861 answered) and the deal still got
+through at the rate the machine could confirm. That is the priority order chapter 07 built,
+doing its job on the real platform.
 
 ## Reproduce
 

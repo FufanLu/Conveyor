@@ -10,7 +10,7 @@ back to the customer.
 Java 25 and Spring Boot 4.1 microservices. Each piece of middleware is chosen so it maps onto an
 AWS managed service: the same design runs on a laptop with Docker and on AWS.
 
-> **Status: M7 is done.** On top of the platform (M0), the catalog (M1: two-level cache, Bloom
+> **Status: M8 is done: all milestones complete.** On top of the platform (M0), the catalog (M1: two-level cache, Bloom
 > filter, OpenSearch, guarded writes), orders (M2: 16 shards, idempotency, outbox → Debezium →
 > Kafka, CQRS read model) and inventory (M3: Redis Lua gate, Postgres facts, reconciler,
 > bulkhead), every placed order now runs a Temporal saga: reserve, authorize, commit, promise a
@@ -19,7 +19,8 @@ AWS managed service: the same design runs on a laptop with Docker and on AWS.
 > pushes it to browsers over SSE. The web app (M6) draws the whole journey as a transit map.
 > M7 makes it degrade on purpose: adaptive admission at the edge, a circuit breaker, SLOs with
 > burn-rate alerts, traces through the outbox, and a browser driving the full stack in CI.
-> See [Roadmap](#roadmap).
+> M8 ships it to Kubernetes (Helm, proven on kind in CI), describes the AWS estate with CDK in
+> Java, and runs a scaled-down Prime Day against the whole platform. See [Roadmap](#roadmap).
 
 ## Architecture
 
@@ -93,6 +94,16 @@ The interesting parts, by milestone:
 ## Measured so far
 
 Every number in this repository comes from running the code.
+
+**Chapter 08 (M8).** On kind, a runner goes from an empty machine to an order confirmed in
+296 s. The CDK stack synthesizes 65 resources, and six tests assert it without an AWS account.
+Then Prime Day ran on one 4-vCPU runner: 7,000 buyers for a 6,000-unit deal, with browsing,
+regular orders and couriers alongside. The machine confirmed about 25 orders/s, so the checkout
+SLO failed (40 % available) and the burn-rate alerts paged. Correctness held in every run:
+each accepted order was confirmed, the remaining stock was exactly 6,000 minus the confirmed
+count, and the buyers turned away got a fast 503 instead of a timeout. The chapter says what a
+real deal day would add (a waiting room, per-route admission).
+→ [docs/illustrated/08-prime-day.md](docs/illustrated/08-prime-day.md)
 
 **Chapter 07 (M7).** An upstream that serves 400 req/s was offered 1,200. Without protection,
 every request timed out and goodput fell to 0. With the gateway's adaptive admission, goodput
@@ -208,4 +219,4 @@ docs/                 architecture and the illustrated walkthroughs
 | M5 | Tracking: courier event firehose, DynamoDB, SSE | done |
 | M6 | Web: storefront, live map, ops console | done |
 | M7 | Resilience and observability: shedding, circuit breakers, tracing, SLO dashboards, chaos | done |
-| M8 | Load test and delivery: Prime Day scenario, Helm on kind, AWS CDK | |
+| M8 | Load test and delivery: Prime Day scenario, Helm on kind, AWS CDK | done |
