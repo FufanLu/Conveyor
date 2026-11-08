@@ -25,7 +25,8 @@ import reactor.core.publisher.Mono;
  *
  * <pre>
  *   GET  /api/v1/deals                      deals and their lines (public)
- *   POST /api/v1/deals/{id}/queue           join: a ticket and a place
+ *   POST /api/v1/deals/{id}/queue           join: a ticket and a place (Idempotency-Key: a
+ *                                           retried join gets the same place back)
  *   GET  /api/v1/deals/{id}/queue/{ticket}  where the place is; once admitted, an admission
  *                                           for the signed-in customer
  * </pre>
@@ -34,6 +35,8 @@ import reactor.core.publisher.Mono;
  * the customer's turn, so the line costs a few requests per customer however long it is.
  */
 public final class WaitingRoomRoutes {
+
+    private static final java.util.regex.Pattern KEY = java.util.regex.Pattern.compile("[A-Za-z0-9_-]{8,64}");
 
     private final WaitingRooms rooms;
     private final DealTokens tokens;
@@ -75,12 +78,26 @@ public final class WaitingRoomRoutes {
         if (room.isEmpty()) {
             return problem(request, HttpStatus.NOT_FOUND, "No deal " + request.pathVariable("id") + ".");
         }
+        String key = request.headers().firstHeader("Idempotency-Key");
+        if (key == null || !KEY.matcher(key).matches()) {
+            return problem(
+                    request,
+                    HttpStatus.BAD_REQUEST,
+                    "Send an Idempotency-Key header (8-64 of A-Z a-z 0-9 _ -); a retried join keeps its place.");
+        }
         WaitingRooms.Room r = room.get();
-        return rooms.join(r)
-                .flatMap(place -> {
+        return request.principal()
+                .map(java.security.Principal::getName)
+                .defaultIfEmpty("anonymous")
+                .flatMap(customer -> rooms.join(r, customer, key))
+                .flatMap(joined -> {
+                    long place = joined.place();
                     String ticket = tokens.ticket(new DealTokens.Ticket(r.deal.id(), place, clock.instant()));
                     URI self = URI.create("/api/v1/deals/" + r.deal.id() + "/queue/" + ticket);
-                    return answer(request, r, place, ticket, ServerResponse.created(self));
+                    ServerResponse.BodyBuilder builder = joined.replayed()
+                            ? ServerResponse.ok().header("Idempotent-Replayed", "true")
+                            : ServerResponse.created(self);
+                    return answer(request, r, place, ticket, builder);
                 })
                 .onErrorResume(e -> problem(
                         request,

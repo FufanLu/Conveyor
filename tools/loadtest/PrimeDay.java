@@ -260,14 +260,17 @@ public class PrimeDay {
         String user = users.get(ThreadLocalRandom.current().nextInt(users.size()));
         long t0 = System.nanoTime();
         try {
-            // A failed join or poll is retried after a few seconds, as the web page does; the
-            // first run counted one timed-out poll as a lost customer (5,427 of them).
+            // A failed join or poll is retried as the web page does: the same Idempotency-Key (a
+            // retried join keeps its place) and exponential backoff with full jitter. Run 1
+            // counted one timed-out poll as a lost customer; run 2 retried joins without a key
+            // and every 3-5 s, and 7,000 buyers took 19,724 places.
+            String joinKey = "join-" + UUID.randomUUID();
             String body = null;
-            while (body == null) {
-                HttpResponse<String> r = trySend("POST", "/api/v1/deals/" + DEAL_ID + "/queue", user);
-                if (r != null && r.statusCode() == 201) body = r.body();
+            for (int failures = 0; body == null; failures++) {
+                HttpResponse<String> r = trySend("POST", "/api/v1/deals/" + DEAL_ID + "/queue", user, joinKey);
+                if (r != null && (r.statusCode() == 201 || r.statusCode() == 200)) body = r.body();
                 else if (gaveUp(t0)) return;
-                else Thread.sleep(3000 + ThreadLocalRandom.current().nextLong(2000));
+                else backoff(failures);
             }
             String ticket = field(body, "ticket");
             while (true) {
@@ -281,11 +284,13 @@ public class PrimeDay {
                 long poll = Long.parseLong(field(body, "pollAfterMs"));
                 Thread.sleep(poll + ThreadLocalRandom.current().nextLong(500));
                 HttpResponse<String> p;
-                while ((p = trySend("GET", "/api/v1/deals/" + DEAL_ID + "/queue/" + ticket, user)) == null
-                        || p.statusCode() != 200) {
+                for (int failures = 0;
+                        (p = trySend("GET", "/api/v1/deals/" + DEAL_ID + "/queue/" + ticket, user, null)) == null
+                                || p.statusCode() != 200;
+                        failures++) {
                     polls.computeIfAbsent(p == null ? "timeout" : Integer.toString(p.statusCode()), k -> new java.util.concurrent.atomic.AtomicLong()).incrementAndGet();
                     if (gaveUp(t0)) return;
-                    Thread.sleep(3000 + ThreadLocalRandom.current().nextLong(2000));
+                    backoff(failures);
                 }
                 polls.computeIfAbsent("200", k -> new java.util.concurrent.atomic.AtomicLong()).incrementAndGet();
                 body = p.body();
@@ -320,12 +325,23 @@ public class PrimeDay {
     }
 
     /** A request whose failure (timeout, refused connection) is an answer, not an exception. */
-    static HttpResponse<String> trySend(String method, String path, String user) {
+    static HttpResponse<String> trySend(String method, String path, String user, String key) {
         try {
-            return send(method, path, user);
+            var b = HttpRequest.newBuilder(URI.create(gateway + path))
+                    .timeout(Duration.ofSeconds(5))
+                    .header("Authorization", "Bearer " + token(user))
+                    .method(method, HttpRequest.BodyPublishers.noBody());
+            if (key != null) b.header("Idempotency-Key", key);
+            return http.send(b.build(), HttpResponse.BodyHandlers.ofString());
         } catch (Exception e) {
             return null;
         }
+    }
+
+    /** Full jitter: a random wait up to 2 s, 4 s, 8 s ... capped at 30 s. */
+    static void backoff(int failures) throws InterruptedException {
+        long cap = Math.min(30_000, 2000L << Math.min(failures, 4));
+        Thread.sleep(ThreadLocalRandom.current().nextLong(500, cap));
     }
 
     static HttpResponse<String> send(String method, String path, String user) throws Exception {

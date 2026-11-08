@@ -23,6 +23,7 @@ import reactor.core.publisher.Mono;
  *
  * <pre>
  *   deal:{id}:issued    INCR on every join: the last place handed out
+ *   deal:{id}:join:{customer}:{Idempotency-Key}   the place a join got, for an hour
  *   deal:{id}:frontier  places up to here are admitted; only moves forward
  *   deal:{id}:rate      admissions per second, set by the leader
  *   deal:{id}:leader    lease (SET NX PX 3000) of the instance that advances the frontier
@@ -49,6 +50,23 @@ public final class WaitingRooms implements DisposableBean {
             if n > f then redis.call('SET', KEYS[1], n) else n = f end
             return {n, i}
             """, (Class<List<Long>>) (Class<?>) List.class);
+
+    /**
+     * KEYS join key, issued; ARGV ttl seconds. Returns {place, 1 if replayed}. A join retried
+     * after a timeout must not take a second place: the second Prime Day run had no such key,
+     * and 7,000 customers retrying joins took 19,724 places (docs/illustrated/09).
+     */
+    @SuppressWarnings("unchecked")
+    private static final RedisScript<List<Long>> JOIN = RedisScript.of("""
+            local p = redis.call('GET', KEYS[1])
+            if p then return {tonumber(p), 1} end
+            local n = redis.call('INCR', KEYS[2])
+            redis.call('SET', KEYS[1], n, 'EX', tonumber(ARGV[1]))
+            return {n, 0}
+            """, (Class<List<Long>>) (Class<?>) List.class);
+
+    /** A place in line and whether it is an earlier join's, replayed. */
+    record Joined(long place, boolean replayed) {}
 
     /** One deal's line as this instance last saw it. */
     static final class Room {
@@ -117,9 +135,14 @@ public final class WaitingRooms implements DisposableBean {
         return List.copyOf(rooms.values());
     }
 
-    /** A new place at the back of the line. */
-    Mono<Long> join(Room room) {
-        return redis.opsForValue().increment(room.key("issued"));
+    /** A place at the back of the line, or the one this customer's earlier try with the same key got. */
+    Mono<Joined> join(Room room, String customer, String idempotencyKey) {
+        return redis.execute(
+                        JOIN,
+                        List.of(room.key("join:" + customer + ":" + idempotencyKey), room.key("issued")),
+                        List.of("3600"))
+                .next()
+                .map(r -> new Joined(r.get(0), r.get(1) == 1L));
     }
 
     private Mono<Void> tick() {

@@ -7,6 +7,9 @@ import "./deal.css";
 
 const n = (v: number) => v.toLocaleString("en-US");
 
+/** After a failed poll: a random wait up to 2 s, 4 s, 8 s … 30 s, so a crowd does not retry in step. */
+const backoff = (failures: number) => 500 + Math.random() * Math.min(30_000, 2000 * 2 ** Math.min(failures, 4));
+
 function duration(seconds: number) {
   if (seconds < 60) return `${Math.max(1, seconds)} s`;
   const m = Math.floor(seconds / 60);
@@ -29,6 +32,9 @@ export function DealPanel({ id, deal, p }: { id: string; deal: Deal; p: Hit }) {
   const [lost, setLost] = useState(false);
   const [now, setNow] = useState(Date.now());
   const key = useRef(crypto.randomUUID());
+  // One key per visit: pressing Join again after a timeout keeps the place the first try got.
+  const joinKey = useRef(crypto.randomUUID());
+  const [failures, setFailures] = useState(0);
 
   // Poll when the gateway says to; it spaces polls out for customers far back in the line.
   useEffect(() => {
@@ -40,19 +46,21 @@ export function DealPanel({ id, deal, p }: { id: string; deal: Deal; p: Hit }) {
         if (live) {
           setPlace(next);
           setLost(false);
+          setFailures(0);
         }
       } catch {
         if (live) {
           setLost(true);
-          setPlace({ ...place }); // try again after the same wait
+          setFailures((f) => f + 1);
+          setPlace({ ...place }); // try again
         }
       }
-    }, lost ? 3000 : (place.pollAfterMs ?? 2000));
+    }, lost ? backoff(failures) : (place.pollAfterMs ?? 2000));
     return () => {
       live = false;
       clearTimeout(timer);
     };
-  }, [backend, deal.id, place, lost]);
+  }, [backend, deal.id, place, lost, failures]);
 
   // The admission window counts down by the second.
   useEffect(() => {
@@ -66,7 +74,7 @@ export function DealPanel({ id, deal, p }: { id: string; deal: Deal; p: Hit }) {
     setBusy(true);
     setError(null);
     try {
-      const first = await backend.joinDeal(deal.id);
+      const first = await backend.joinDeal(deal.id, joinKey.current);
       setFirstAhead(first.ahead);
       setPlace(first);
     } catch (e) {
@@ -158,7 +166,7 @@ export function DealPanel({ id, deal, p }: { id: string; deal: Deal; p: Hit }) {
           </dl>
           <p className="deal-note muted" role="status" aria-live="polite">
             {lost
-              ? "Lost touch with the line. Your place is kept; checking again…"
+              ? "Lost touch with the line. Your place is kept; checking again shortly…"
               : `${n(place.ahead)} ahead of you. This page checks again on its own.`}
           </p>
         </>

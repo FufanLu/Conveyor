@@ -56,7 +56,8 @@ export const gateway: Backend = {
     }
   },
   deals: async () => (await call<{ deals: Deal[] }>("/v1/deals")).deals,
-  joinDeal: (id) => call<Place>(`/v1/deals/${encodeURIComponent(id)}/queue`, { method: "POST" }),
+  joinDeal: (id, key) =>
+    call<Place>(`/v1/deals/${encodeURIComponent(id)}/queue`, { method: "POST", headers: { "Idempotency-Key": key } }),
   pollDeal: (id, ticket) => call<Place>(`/v1/deals/${encodeURIComponent(id)}/queue/${encodeURIComponent(ticket)}`),
   order: (id) => call<Order>(`/v1/orders/${encodeURIComponent(id)}`),
   myOrders: async () => (await call<{ orders: Order[] }>("/v1/orders?limit=20")).orders,

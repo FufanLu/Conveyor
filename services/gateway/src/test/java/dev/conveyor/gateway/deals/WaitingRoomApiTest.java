@@ -68,8 +68,13 @@ class WaitingRoomApiTest {
     private final String token = "Bearer " + TestJwts.tokenForSubject("shopper-1", "customer");
 
     private HttpResponse<String> send(String method, String path, String auth) throws Exception {
+        return send(method, path, auth, "key-" + java.util.UUID.randomUUID());
+    }
+
+    private HttpResponse<String> send(String method, String path, String auth, String key) throws Exception {
         var b = HttpRequest.newBuilder(
                         URI.create("http://localhost:" + environment.getProperty("local.server.port") + path))
+                .header("Idempotency-Key", key)
                 .method(method, HttpRequest.BodyPublishers.noBody());
         if (auth != null) {
             b.header("Authorization", auth);
@@ -95,6 +100,14 @@ class WaitingRoomApiTest {
             }
         }
 
+        // a join retried with the same key keeps its place instead of taking a new one
+        HttpResponse<String> again = send("POST", "/api/v1/deals/lightning-1/queue", token, "retry-key-1");
+        HttpResponse<String> replay = send("POST", "/api/v1/deals/lightning-1/queue", token, "retry-key-1");
+        assertThat(again.body()).contains("\"place\":7");
+        assertThat(replay.statusCode()).isEqualTo(200);
+        assertThat(replay.headers().firstValue("Idempotent-Replayed")).hasValue("true");
+        assertThat(replay.body()).contains("\"place\":7");
+
         String path = "/api/v1/deals/lightning-1/queue/" + tickets.get(3);
         assertThat(send("GET", path, null).statusCode()).isEqualTo(401);
         await().atMost(Duration.ofSeconds(10))
@@ -102,7 +115,7 @@ class WaitingRoomApiTest {
         assertThat(send("GET", path, token).body()).contains("\"admission\":\"");
 
         assertThat(send("GET", "/api/v1/deals", null).body())
-                .contains("\"joined\":6")
+                .contains("\"joined\":7")
                 .contains("\"admitted\":4");
 
         // a ticket for another deal, or a forged one, is no place in this line

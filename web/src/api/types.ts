@@ -136,7 +136,8 @@ export interface Backend {
   ): Promise<Order>;
   product(sku: string): Promise<Hit | null>;
   deals(): Promise<Deal[]>;
-  joinDeal(dealId: string): Promise<Place>;
+  /** Retrying with the same key gets the same place back. */
+  joinDeal(dealId: string, idempotencyKey: string): Promise<Place>;
   pollDeal(dealId: string, ticket: string): Promise<Place>;
   order(orderId: string): Promise<Order>;
   myOrders(): Promise<Order[]>;
