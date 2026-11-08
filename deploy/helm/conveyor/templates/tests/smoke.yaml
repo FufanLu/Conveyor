@@ -22,10 +22,12 @@ spec:
             -d grant_type=password -d client_id=conveyor-cli -d username=alice -d password=alice \
             | sed -n 's/.*"access_token":"\([^"]*\)".*/\1/p')
           [ -n "$token" ] || { echo "no token"; exit 1; }
-          order=$(curl -fsS -X POST http://gateway:8080/api/v1/orders \
+          order=$(curl -sS -w '\n%{http_code}' -X POST http://gateway:8080/api/v1/orders \
             -H "Authorization: Bearer $token" -H "Idempotency-Key: smoke-$(date +%s)-$$" \
             -H 'Content-Type: application/json' \
-            -d '{"items":[{"sku":"B0DEE0D8F5","quantity":1}],"shipToRegion":"us-east"}')
+            -d '{"items":[{"sku":"B09E3779B1","quantity":1}],"shipToRegion":"us-east"}')
+          echo "POST /api/v1/orders -> $(echo "$order" | tail -n1): $(echo "$order" | head -n1)"
+          [ "$(echo "$order" | tail -n1)" = "201" ] || exit 1
           id=$(echo "$order" | sed -n 's/.*"orderId":"\([^"]*\)".*/\1/p')
           echo "placed $id"
           for i in $(seq 1 60); do
