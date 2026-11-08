@@ -1,0 +1,50 @@
+name: prime-day
+
+# Prime Day scaled to one runner: the full stack, 2,000 couriers, 200 signed-in customers, a
+# 6,000-unit deal with 7,000 buyers, then the SLOs from Prometheus and the deal's stock.
+on:
+  workflow_dispatch:
+    inputs:
+      customers:
+        description: Customers created in Keycloak and signed in
+        default: "200"
+      deal_buyers:
+        description: Buyers who try the 6,000-unit deal within 60 s
+        default: "7000"
+
+permissions:
+  contents: read
+
+jobs:
+  prime-day:
+    name: prime day on the full stack
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - uses: gradle/actions/setup-gradle@v6
+
+      - name: Allow OpenSearch's memory maps
+        run: sudo sysctl -w vm.max_map_count=262144
+
+      - run: ./gradlew assemble
+
+      - name: Prime Day
+        env:
+          CUSTOMERS: ${{ inputs.customers }}
+          DEAL_BUYERS: ${{ inputs.deal_buyers }}
+        run: tools/loadtest/prime-day.sh | tee prime-day-results.txt
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: prime-day
+          path: |
+            prime-day-results.txt
+            build/prime-day/
