@@ -1,0 +1,178 @@
+/* The deal's waiting room, opened in place inside its catalog row (no modal). */
+/* .timetable's own bottom margin is for the end of a list; this one has a section below. */
+.timetable.deal-table {
+  margin-bottom: 0;
+}
+.deal {
+  display: grid;
+  gap: var(--s5);
+  padding: var(--s4) var(--s3) var(--s5) calc(112px + var(--s4) + var(--s3));
+}
+.deal-idle {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  justify-content: space-between;
+  gap: var(--s4);
+}
+.deal-idle p,
+.deal-turn p {
+  max-width: 60ch;
+  margin: 0;
+}
+.deal .btn {
+  min-height: 48px;
+  padding: 0 var(--s5);
+  font-size: 18px;
+}
+
+/* The line: joined at the left, your turn at the right, the front of the queue as the train. */
+.qline {
+  --qc: var(--east);
+  --done: 0;
+  position: relative;
+  height: 76px;
+  margin: 0 14px;
+}
+.qline-track,
+.qline-done {
+  position: absolute;
+  top: 34px;
+  left: 0;
+  height: 0;
+}
+.qline-track {
+  right: 0;
+  border-top: 2px dotted var(--unreached);
+  top: 36px;
+}
+.qline-done {
+  width: calc(var(--done) * 100%);
+  border-top: var(--line) solid var(--qc);
+  border-radius: 3px;
+  transition: width 900ms var(--ease);
+}
+.qline-stop {
+  position: absolute;
+  top: 28px;
+  width: 18px;
+  height: 18px;
+  margin-left: -9px;
+  border: 3px solid var(--ink);
+  border-radius: 50%;
+  background: var(--surface);
+}
+.qline-from {
+  left: 0;
+}
+.qline-you {
+  left: 100%;
+  width: 22px;
+  height: 22px;
+  top: 26px;
+  margin-left: -11px;
+  border-width: 3.5px;
+}
+.qline-label {
+  position: absolute;
+  top: 26px;
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  font: 600 12px/1 var(--sign);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+.qline-from .qline-label {
+  left: -2px;
+  transform: none;
+}
+.qline-you .qline-label {
+  left: auto;
+  right: -2px;
+  transform: none;
+  color: var(--ink);
+}
+.qline-train {
+  position: absolute;
+  top: 27px;
+  left: calc(var(--done) * 100%);
+  margin-left: -10px;
+  transition: left 900ms var(--ease);
+}
+.qline-train .bullet {
+  box-shadow: 0 0 0 3px var(--surface);
+}
+.qline-gap {
+  position: absolute;
+  top: 2px;
+  left: calc(var(--done) * 50% + 50%);
+  transform: translateX(-50%);
+  white-space: nowrap;
+  font: 600 14px/1 var(--sign);
+  color: var(--ink-3);
+}
+
+.deal-readout {
+  display: grid;
+  grid-template-columns: repeat(4, max-content);
+  gap: var(--s6);
+  margin: 0;
+}
+.deal-readout dt {
+  font: 600 12px/1 var(--sign);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+  margin-bottom: var(--s2);
+}
+.deal-readout dd {
+  margin: 0;
+  font: 600 26px/1 var(--sign);
+}
+.deal-note {
+  margin: calc(var(--s3) * -1) 0 0;
+  font-size: 14px;
+}
+.deal-turn {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s4);
+}
+.deal-turn p strong {
+  font: 600 20px/1 var(--sign);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+@media (max-width: 900px) {
+  .deal {
+    padding: var(--s3) var(--s3) var(--s5);
+    gap: var(--s4);
+  }
+  .deal .btn {
+    width: 100%;
+  }
+  .deal-readout {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--s4);
+  }
+  .deal-readout dd {
+    font-size: 22px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .qline-done,
+  .qline-train {
+    transition: none;
+  }
+}

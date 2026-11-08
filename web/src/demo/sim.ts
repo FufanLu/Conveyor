@@ -158,6 +158,18 @@ export const demo: Backend = {
     await new Promise((r) => setTimeout(r, 120));
     return search(text, category, page, size);
   },
+  product: async (sku) => bySku(sku) ?? null,
+  deals: async () => [dealNow()],
+  joinDeal: async () => {
+    await new Promise((r) => setTimeout(r, 180));
+    const d = dealNow();
+    const ticket = `demo.${Date.now()}.${d.joined + 1}.${d.joined + 1 - d.admitted}`;
+    return placeOf(ticket);
+  },
+  pollDeal: async (_id, ticket) => {
+    await new Promise((r) => setTimeout(r, 90));
+    return placeOf(ticket);
+  },
   placeOrder: async (items, region, key) => {
     await new Promise((r) => setTimeout(r, 260));
     const known = byKey.get(key);
@@ -258,3 +270,29 @@ export const demo: Backend = {
     return { total: all.length, orders: all.slice(0, size ?? 50) };
   },
 };
+
+// ------------------------------------------------------------------ the deal's line, simulated
+
+// The demo line repeats every 400 s so a visitor always finds it mid-sale: people join at 9/s
+// and the gateway admits 12/s, so whoever joins now waits about 25 to 40 s.
+const DEAL = { id: "lightning-1", sku: "B09E3779B1", units: 6000 };
+const JOIN_RATE = 9;
+const ADMIT_RATE = 12;
+
+function dealNow() {
+  const t = (Date.now() / 1000) % 400;
+  const joined = Math.floor(1800 + JOIN_RATE * t);
+  const admitted = Math.floor(joined - 300 - t / 2);
+  return { ...DEAL, joined, admitted, admissionsPerSecond: ADMIT_RATE };
+}
+
+function placeOf(ticket: string) {
+  const [, at, place, ahead0] = ticket.split(".").map(Number);
+  const ahead = Math.max(0, Math.ceil(ahead0 - ((Date.now() - at) / 1000) * ADMIT_RATE));
+  const base = { dealId: DEAL.id, sku: DEAL.sku, ticket, place, etaSeconds: Math.ceil(ahead / ADMIT_RATE) };
+  if (ahead > 0) {
+    return { ...base, state: "WAITING" as const, ahead, pollAfterMs: Math.min(15_000, Math.max(1000, (ahead / ADMIT_RATE) * 500)) };
+  }
+  const expires = at + (ahead0 / ADMIT_RATE) * 1000 + 600_000;
+  return { ...base, state: "ADMITTED" as const, ahead: 0, admission: `demo-admission.${place}`, admissionExpiresAt: new Date(expires).toISOString() };
+}

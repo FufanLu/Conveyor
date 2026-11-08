@@ -95,13 +95,49 @@ export class Problem extends Error {
   }
 }
 
+/** A deal sold through the gateway's waiting room (GET /api/v1/deals). */
+export interface Deal {
+  id: string;
+  sku: string;
+  units: number;
+  joined: number;
+  admitted: number;
+  admissionsPerSecond: number;
+}
+
+export type LineState = "WAITING" | "ADMITTED" | "SOLD_OUT";
+
+/** A place in a deal's line: the gateway's answer to joining and to every poll. */
+export interface Place {
+  dealId: string;
+  sku: string;
+  ticket: string;
+  state: LineState;
+  place: number;
+  ahead: number;
+  etaSeconds: number;
+  pollAfterMs?: number;
+  /** Once admitted: what order-svc wants in Conveyor-Admission, for this customer only. */
+  admission?: string;
+  admissionExpiresAt?: string;
+}
+
 export type StreamState = "connecting" | "live" | "reconnecting" | "closed";
 
 /** Everything the screens need. Implemented by the gateway client and by the demo simulation. */
 export interface Backend {
   readonly kind: "gateway" | "demo";
   search(q: { text?: string; category?: string; page?: number; size?: number }): Promise<SearchResult>;
-  placeOrder(items: { sku: string; quantity: number }[], region: Region, idempotencyKey: string): Promise<Order>;
+  placeOrder(
+    items: { sku: string; quantity: number }[],
+    region: Region,
+    idempotencyKey: string,
+    admission?: string,
+  ): Promise<Order>;
+  product(sku: string): Promise<Hit | null>;
+  deals(): Promise<Deal[]>;
+  joinDeal(dealId: string): Promise<Place>;
+  pollDeal(dealId: string, ticket: string): Promise<Place>;
   order(orderId: string): Promise<Order>;
   myOrders(): Promise<Order[]>;
   shipment(shipmentId: string): Promise<Shipment | null>;

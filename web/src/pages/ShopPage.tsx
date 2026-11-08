@@ -1,8 +1,9 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { useNavigate, useSearchParams } from "react-router";
-import { Problem, REGIONS, type Hit, type Region, type SearchResult } from "../api/types";
+import { Problem, REGIONS, type Deal, type Hit, type Region, type SearchResult } from "../api/types";
 import { useSession } from "../session";
 import { Bullet, REGION_NAME, money } from "../ui/kit";
+import { DealSection } from "./Deal";
 import "./shop.css";
 
 const PAGE = 25;
@@ -18,6 +19,23 @@ export default function ShopPage() {
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState<string | null>(null);
   const [more, setMore] = useState(false);
+  const [deals, setDeals] = useState<Deal[]>([]);
+
+  // Deals and their lines; refreshed every 10 s so the counts move. No deals, no strip.
+  useEffect(() => {
+    let live = true;
+    const load = () =>
+      backend
+        .deals()
+        .then((d) => live && setDeals(d))
+        .catch(() => undefined);
+    void load();
+    const t = setInterval(load, 10_000);
+    return () => {
+      live = false;
+      clearInterval(t);
+    };
+  }, [backend]);
 
   useEffect(() => {
     let live = true;
@@ -101,6 +119,7 @@ export default function ShopPage() {
       </section>
 
       <div className="wrap">
+        {!text && !category && deals.map((d) => <DealSection key={d.id} deal={d} />)}
         <div className="section-head">
           <h2>{text || category ? "Results" : "Top rated"}</h2>
           <span className="muted num" aria-live="polite">
