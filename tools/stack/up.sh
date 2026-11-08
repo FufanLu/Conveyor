@@ -32,5 +32,13 @@ for s in "${!PORT[@]}"; do
 done
 
 echo "### connectors"
-docker exec conveyor-connect-1 bash /setup/register.sh | grep -o '"name":"[^"]*","connector":{"state":"[A-Z]*"' || true
+# Connect's REST API comes up well after its container reports started; register only once it
+# answers, and retry (a prime-day run once got 404 from a worker that was still loading).
+until curl -fs -o /dev/null http://localhost:8183/connectors; do sleep 2; done
+for attempt in 1 2 3 4 5; do
+    if docker exec conveyor-connect-1 bash /setup/register.sh > "$OUT/connectors.txt" 2>&1; then break; fi
+    echo "connector registration attempt $attempt failed; retrying"
+    sleep 10
+done
+grep -o '"name":"[^"]*","connector":{"state":"[A-Z]*"' "$OUT/connectors.txt" || cat "$OUT/connectors.txt"
 

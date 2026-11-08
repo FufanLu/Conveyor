@@ -91,6 +91,8 @@ public class PrimeDay {
                 "access_token");
         List<String> users = new ArrayList<>();
         var pool = Executors.newVirtualThreadPerTaskExecutor();
+        // 16 at a time: 200 parallel creations made Keycloak time out one of them in a run.
+        var gate = new java.util.concurrent.Semaphore(16);
         List<java.util.concurrent.Future<?>> pending = new ArrayList<>();
         for (int i = 0; i < n; i++) {
             String user = String.format(Locale.ROOT, "shopper-%03d", i);
@@ -100,10 +102,23 @@ public class PrimeDay {
                         {"username":"%s","enabled":true,"email":"%s@example.com","emailVerified":true,
                          "firstName":"Prime","lastName":"Shopper",
                          "credentials":[{"type":"password","value":"%s","temporary":false}]}""".formatted(user, user, user);
-                var r = post(keycloak + "/admin/realms/conveyor/users", body, "Bearer " + admin, "application/json");
-                if (r.statusCode() != 201 && r.statusCode() != 409) throw new IllegalStateException("create " + user + ": " + r.statusCode());
-                token(user);
-                return null;
+                gate.acquire();
+                try {
+                    for (int attempt = 1; ; attempt++) {
+                        try {
+                            var r = post(keycloak + "/admin/realms/conveyor/users", body, "Bearer " + admin, "application/json");
+                            if (r.statusCode() != 201 && r.statusCode() != 409) {
+                                throw new IllegalStateException("create " + user + ": " + r.statusCode());
+                            }
+                            token(user);
+                            return null;
+                        } catch (java.net.http.HttpTimeoutException e) {
+                            if (attempt == 3) throw e;
+                        }
+                    }
+                } finally {
+                    gate.release();
+                }
             }));
         }
         for (var f : pending) f.get();
@@ -257,7 +272,7 @@ public class PrimeDay {
     // ------------------------------------------------------------------ helpers
 
     static HttpResponse<String> post(String url, String body, String auth, String type) throws Exception {
-        var b = HttpRequest.newBuilder(URI.create(url)).timeout(Duration.ofSeconds(15)).header("Content-Type", type)
+        var b = HttpRequest.newBuilder(URI.create(url)).timeout(Duration.ofSeconds(30)).header("Content-Type", type)
                 .POST(HttpRequest.BodyPublishers.ofString(body));
         if (auth != null) b.header("Authorization", auth);
         return http.send(b.build(), HttpResponse.BodyHandlers.ofString());
