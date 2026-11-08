@@ -69,6 +69,9 @@ public class PrimeDay {
         long t0 = System.nanoTime();
         List<String> users = setup(customers);
         System.out.printf("setup: %d customers signed in after %.1f s%n", users.size(), (System.nanoTime() - t0) / 1e9);
+        // Signing in 200 customers is password hashing on Keycloak's CPU, not shopping; the first
+        // run's warm phase started while that was still going on. Let it settle.
+        Thread.sleep(30_000);
 
         phase("warm", 60, 40, 4, 0, users);
         phase("deal", 60, 80, 4, dealBuyers / 60.0, users);
@@ -127,7 +130,7 @@ public class PrimeDay {
                 dealPerS > 0 ? String.format(Locale.ROOT, ", deal %.0f/s", dealPerS) : "");
         var pool = Executors.newVirtualThreadPerTaskExecutor();
         List<Thread> drivers = new ArrayList<>();
-        drivers.add(Thread.ofVirtual().start(() -> schedule(pool, browsePerS, seconds, () -> browse(name))));
+        drivers.add(Thread.ofVirtual().start(() -> schedule(pool, browsePerS, seconds, () -> browse(name, users))));
         drivers.add(Thread.ofVirtual().start(() -> schedule(pool, ordersPerS, seconds, () -> order(name, "order", pickSku(), users))));
         if (dealPerS > 0) drivers.add(Thread.ofVirtual().start(() -> schedule(pool, dealPerS, seconds, () -> order(name, "deal", DEAL_SKU, users))));
         for (Thread d : drivers) d.join();
@@ -157,7 +160,13 @@ public class PrimeDay {
         return skus.get(ThreadLocalRandom.current().nextInt(skus.size()));
     }
 
-    static void browse(String phase) {
+    /**
+     * Browsing as a signed-in customer: the gateway's browse rate limit is per customer (or per
+     * address when anonymous). The first run browsed anonymously from one address, so the
+     * per-address limit (50/s) answered 429 to the whole crowd at peak, an artifact of the test.
+     */
+    static void browse(String phase, List<String> users) {
+        String user = users.get(ThreadLocalRandom.current().nextInt(users.size()));
         boolean search = ThreadLocalRandom.current().nextInt(10) < 6;
         String path = search
                 ? "/api/v1/search?q=" + URLEncoder.encode(WORDS[ThreadLocalRandom.current().nextInt(WORDS.length)], StandardCharsets.UTF_8)
@@ -165,8 +174,13 @@ public class PrimeDay {
         long t0 = System.nanoTime();
         int status;
         try {
-            status = http.send(HttpRequest.newBuilder(URI.create(gateway + path)).timeout(Duration.ofSeconds(5)).GET().build(),
-                    HttpResponse.BodyHandlers.discarding()).statusCode();
+            status = http.send(HttpRequest.newBuilder(URI.create(gateway + path))
+                                    .timeout(Duration.ofSeconds(5))
+                                    .header("Authorization", "Bearer " + token(user))
+                                    .GET()
+                                    .build(),
+                            HttpResponse.BodyHandlers.discarding())
+                    .statusCode();
         } catch (Exception e) {
             status = -1;
         }
