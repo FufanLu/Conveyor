@@ -1,5 +1,6 @@
 package dev.conveyor.gateway.overload;
 
+import dev.conveyor.gateway.deals.LaneStats;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.net.InetSocketAddress;
 import java.security.Principal;
@@ -15,8 +16,9 @@ import reactor.core.publisher.Mono;
 class OverloadConfiguration {
 
     @Bean
-    LoadSheddingFilter loadSheddingFilter(LoadSheddingFilter.Settings settings, MeterRegistry registry) {
-        return new LoadSheddingFilter(settings, registry);
+    LoadSheddingFilter loadSheddingFilter(
+            LoadSheddingFilter.Settings settings, MeterRegistry registry, LaneStats dealLane) {
+        return new LoadSheddingFilter(settings, registry, dealLane);
     }
 
     /**

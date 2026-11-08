@@ -13,4 +13,8 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-data-redis-reactive")
 
     testImplementation("org.springframework.security:spring-security-test")
+    // The waiting room's test runs against a real Redis.
+    testImplementation("org.springframework.boot:spring-boot-testcontainers")
+    testImplementation("org.testcontainers:testcontainers-junit-jupiter")
+    testImplementation("org.awaitility:awaitility")
 }

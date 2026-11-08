@@ -26,8 +26,9 @@ import java.util.regex.Pattern;
  * <pre>
  *   setup     N customers created in Keycloak (admin API), each signed in (password grant)
  *   warm      browsing + a trickle of orders
- *   deal      a deal SKU with 6,000 units opens; DEAL_BUYERS customers try to buy it within
- *             60 s while browsing and regular orders continue
+ *   deal      a deal SKU with 6,000 units opens; DEAL_BUYERS customers join its waiting room
+ *             within 60 s (browsing and regular orders continue), wait for their turn, and
+ *             order with the admission they get; a customer gives up after PATIENCE
  *   peak      heavier browsing and regular orders
  *   recover   back to warm
  *   verdict   deal orders by final status (ops order search), and whether any unit was sold twice
@@ -41,6 +42,8 @@ import java.util.regex.Pattern;
 public class PrimeDay {
 
     static final String DEAL_SKU = "B09E3779B1"; // seed row 1: 1,000 units in each of 6 FCs
+    static final String DEAL_ID = "lightning-1"; // tools/loadtest/prime-day.sh configures it
+    static final long PATIENCE_NANOS = TimeUnit.MINUTES.toNanos(5);
     static final String[] REGIONS = {"us-east", "us-central", "us-south", "us-west"};
     static final String[] WORDS = {"kettle", "backpack", "lantern", "earbuds", "coffee", "puzzle", "serum", "leash"};
 
@@ -73,12 +76,18 @@ public class PrimeDay {
         // run's warm phase started while that was still going on. Let it settle.
         Thread.sleep(30_000);
 
+        Thread monitor = Thread.ofVirtual().start(PrimeDay::monitor);
         phase("warm", 60, 40, 4, 0, users);
         phase("deal", 60, 80, 4, dealBuyers / 60.0, users);
         phase("peak", 120, 120, 15, 0, users);
         phase("recover", 60, 40, 4, 0, users);
+        current = "after";
+        buyers.shutdown();
+        buyers.awaitTermination(10, TimeUnit.MINUTES);
+        monitor.interrupt();
 
         report();
+        dealReport();
         verdict(dealBuyers);
         System.exit(0);
     }
@@ -143,11 +152,12 @@ public class PrimeDay {
             throws Exception {
         System.out.printf(Locale.ROOT, "### %s: %d s, browse %.0f/s, orders %.0f/s%s%n", name, seconds, browsePerS, ordersPerS,
                 dealPerS > 0 ? String.format(Locale.ROOT, ", deal %.0f/s", dealPerS) : "");
+        current = name;
         var pool = Executors.newVirtualThreadPerTaskExecutor();
         List<Thread> drivers = new ArrayList<>();
         drivers.add(Thread.ofVirtual().start(() -> schedule(pool, browsePerS, seconds, () -> browse(name, users))));
         drivers.add(Thread.ofVirtual().start(() -> schedule(pool, ordersPerS, seconds, () -> order(name, "order", pickSku(), users))));
-        if (dealPerS > 0) drivers.add(Thread.ofVirtual().start(() -> schedule(pool, dealPerS, seconds, () -> order(name, "deal", DEAL_SKU, users))));
+        if (dealPerS > 0) drivers.add(Thread.ofVirtual().start(() -> schedule(buyers, dealPerS, seconds, () -> dealBuyer(users))));
         for (Thread d : drivers) d.join();
         pool.shutdown();
         pool.awaitTermination(30, TimeUnit.SECONDS);
@@ -205,33 +215,142 @@ public class PrimeDay {
     static final Map<String, Boolean> dealOrders = new ConcurrentHashMap<>();
 
     static void order(String phase, String cls, String sku, List<String> users) {
-        String user = users.get(ThreadLocalRandom.current().nextInt(users.size()));
+        order(phase, cls, sku, users.get(ThreadLocalRandom.current().nextInt(users.size())), null, "pd-" + UUID.randomUUID());
+    }
+
+    static int order(String phase, String cls, String sku, String user, String admission, String key) {
         long t0 = System.nanoTime();
         int status;
         try {
             String body = "{\"items\":[{\"sku\":\"" + sku + "\",\"quantity\":1}],\"shipToRegion\":\""
                     + REGIONS[ThreadLocalRandom.current().nextInt(REGIONS.length)] + "\"}";
-            HttpResponse<String> r = http.send(HttpRequest.newBuilder(URI.create(gateway + "/api/v1/orders"))
-                            .timeout(Duration.ofSeconds(5))
-                            .header("Authorization", "Bearer " + token(user))
-                            .header("Idempotency-Key", "pd-" + UUID.randomUUID())
-                            .header("Content-Type", "application/json")
-                            .POST(HttpRequest.BodyPublishers.ofString(body))
-                            .build(),
-                    HttpResponse.BodyHandlers.ofString());
+            var b = HttpRequest.newBuilder(URI.create(gateway + "/api/v1/orders"))
+                    .timeout(Duration.ofSeconds(5))
+                    .header("Authorization", "Bearer " + token(user))
+                    .header("Idempotency-Key", key)
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString(body));
+            if (admission != null) b.header("Conveyor-Admission", admission);
+            HttpResponse<String> r = http.send(b.build(), HttpResponse.BodyHandlers.ofString());
             status = r.statusCode();
             if (status == 201 && cls.equals("deal")) dealOrders.put(field(r.body(), "orderId"), true);
         } catch (Exception e) {
             status = -1;
         }
         results.add(new Result(phase, cls, status, (System.nanoTime() - t0) / 1000));
+        return status;
+    }
+
+    // ------------------------------------------------------------------ the deal's waiting room
+
+    static volatile String current = "setup";
+    static final java.util.concurrent.ExecutorService buyers = Executors.newVirtualThreadPerTaskExecutor();
+
+    /** How one deal buyer's visit ended: ORDERED, SOLD_OUT, GAVE_UP, REFUSED (order not 201), ERROR. */
+    record Buyer(String outcome, long waitMillis, int orderAttempts) {}
+
+    static final ConcurrentLinkedQueue<Buyer> visits = new ConcurrentLinkedQueue<>();
+
+    /**
+     * A deal buyer: joins the line, polls when the gateway says to, orders once admitted. An
+     * order answered 503 is retried with the same Idempotency-Key after Retry-After, up to three
+     * times, as a buyer holding an admission would.
+     */
+    static void dealBuyer(List<String> users) {
+        String user = users.get(ThreadLocalRandom.current().nextInt(users.size()));
+        long t0 = System.nanoTime();
+        try {
+            HttpResponse<String> r = send("POST", "/api/v1/deals/" + DEAL_ID + "/queue", user);
+            if (r.statusCode() != 201) {
+                visits.add(new Buyer("ERROR", 0, 0));
+                return;
+            }
+            String ticket = field(r.body(), "ticket");
+            String body = r.body();
+            while (true) {
+                String state = field(body, "state");
+                if (state.equals("SOLD_OUT")) {
+                    visits.add(new Buyer("SOLD_OUT", (System.nanoTime() - t0) / 1_000_000, 0));
+                    return;
+                }
+                if (state.equals("ADMITTED")) break;
+                if (System.nanoTime() - t0 > PATIENCE_NANOS) {
+                    visits.add(new Buyer("GAVE_UP", (System.nanoTime() - t0) / 1_000_000, 0));
+                    return;
+                }
+                long poll = Long.parseLong(field(body, "pollAfterMs"));
+                Thread.sleep(poll + ThreadLocalRandom.current().nextLong(500));
+                HttpResponse<String> p = send("GET", "/api/v1/deals/" + DEAL_ID + "/queue/" + ticket, user);
+                if (p.statusCode() == 200) body = p.body();
+            }
+            long waited = (System.nanoTime() - t0) / 1_000_000;
+            String admission = field(body, "admission");
+            String key = "deal-" + UUID.randomUUID();
+            for (int attempt = 1; attempt <= 4; attempt++) {
+                int status = order(current, "deal", DEAL_SKU, user, admission, key);
+                if (status == 201) {
+                    visits.add(new Buyer("ORDERED", waited, attempt));
+                    return;
+                }
+                if (status != 503 && status != -1) {
+                    visits.add(new Buyer("REFUSED", waited, attempt));
+                    return;
+                }
+                Thread.sleep(1000 + ThreadLocalRandom.current().nextLong(1000));
+            }
+            visits.add(new Buyer("REFUSED", waited, 4));
+        } catch (Exception e) {
+            visits.add(new Buyer("ERROR", (System.nanoTime() - t0) / 1_000_000, 0));
+        }
+    }
+
+    static HttpResponse<String> send(String method, String path, String user) throws Exception {
+        return http.send(HttpRequest.newBuilder(URI.create(gateway + path))
+                        .timeout(Duration.ofSeconds(5))
+                        .header("Authorization", "Bearer " + token(user))
+                        .method(method, HttpRequest.BodyPublishers.noBody())
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+    }
+
+    /** The line as the gateway reports it, every 10 s. */
+    static void monitor() {
+        long t0 = System.nanoTime();
+        while (!Thread.currentThread().isInterrupted()) {
+            try {
+                Thread.sleep(10_000);
+                String d = http.send(HttpRequest.newBuilder(URI.create(gateway + "/api/v1/deals")).GET().build(),
+                        HttpResponse.BodyHandlers.ofString()).body();
+                System.out.printf(Locale.ROOT, "  [%4.0f s %-7s] line: joined %s, admitted %s, %s admissions/s%n",
+                        (System.nanoTime() - t0) / 1e9, current, field(d, "joined"), field(d, "admitted"),
+                        field(d, "admissionsPerSecond"));
+            } catch (InterruptedException e) {
+                return;
+            } catch (Exception e) {
+                System.out.println("  line: " + e);
+            }
+        }
+    }
+
+    static void dealReport() {
+        System.out.println("### deal buyers by outcome (wait = join to admission, or to the answer)");
+        Map<String, List<Buyer>> by = new TreeMap<>();
+        visits.forEach(v -> by.computeIfAbsent(v.outcome(), k -> new ArrayList<>()).add(v));
+        by.forEach((outcome, vs) -> {
+            long[] waits = vs.stream().mapToLong(Buyer::waitMillis).sorted().toArray();
+            long retried = vs.stream().filter(v -> v.orderAttempts() > 1).count();
+            System.out.printf(Locale.ROOT, "  %-9s %6d  wait p50 %6.1f s  p99 %6.1f s%s%n", outcome, vs.size(),
+                    waits[(int) Math.min(waits.length - 1, Math.ceil(0.5 * waits.length) - 1)] / 1000.0,
+                    waits[(int) Math.min(waits.length - 1, Math.ceil(0.99 * waits.length) - 1)] / 1000.0,
+                    retried > 0 ? "  (" + retried + " ordered on a retry)" : "");
+        });
     }
 
     // ------------------------------------------------------------------ results
 
     static void report() {
         System.out.println("### answers by phase and class (status: count), latency of 2xx");
-        for (String phase : List.of("warm", "deal", "peak", "recover")) {
+        for (String phase : List.of("warm", "deal", "peak", "recover", "after")) {
             for (String cls : List.of("deal", "order", "product", "search")) {
                 List<Result> rs = results.stream().filter(r -> r.phase().equals(phase) && r.cls().equals(cls)).toList();
                 if (rs.isEmpty()) continue;

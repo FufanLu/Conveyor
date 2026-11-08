@@ -12,6 +12,10 @@ CUSTOMERS=${CUSTOMERS:-200}
 DEAL_BUYERS=${DEAL_BUYERS:-7000}
 # Simulated shipments, one report each per second for the whole run.
 COURIER_SHIPMENTS=${COURIER_SHIPMENTS:-2000}
+# The deal is sold through a waiting room (M9): gateway and order-svc both read these.
+CONVEYOR_DEALS_SECRET="prime-day-$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
+export CONVEYOR_DEALS_SECRET
+export CONVEYOR_DEALS_ITEMS_0_ID=lightning-1 CONVEYOR_DEALS_ITEMS_0_SKU=B09E3779B1 CONVEYOR_DEALS_ITEMS_0_UNITS=6000
 # shellcheck source=../stack/up.sh
 source tools/stack/up.sh
 
@@ -43,8 +47,16 @@ def show(title, expr, fmt=lambda v: f"{float(v):.4g}", label=None):
     for r in sorted(rows, key=lambda r: json.dumps(r["metric"], sort_keys=True)):
         name = " ".join(f"{k}={v}" for k, v in sorted(r["metric"].items()) if k in (label or r["metric"].keys()))
         print(f"    {name or '-':40} {fmt(r['value'][1])}")
-show("edge requests by priority and outcome",
-     f'sum by (priority, outcome) (increase(gateway_edge_requests_seconds_count[{rng}]))', lambda v: f"{float(v):.0f}")
+show("edge requests by priority, lane and outcome",
+     f'sum by (priority, lane, outcome) (increase(gateway_edge_requests_seconds_count[{rng}]))', lambda v: f"{float(v):.0f}")
+show("regular checkout availability (lane=default)",
+     f'1 - sum(increase(gateway_edge_requests_seconds_count{{priority="critical",lane="default",outcome=~"server_error|shed"}}[{rng}]))'
+     f' / sum(increase(gateway_edge_requests_seconds_count{{priority="critical",lane="default"}}[{rng}]))', lambda v: f"{100*float(v):.3f} %")
+show("deal line: most customers waiting at once", f'max(max_over_time(deal_waiting[{rng}]))', lambda v: f"{float(v):.0f}")
+show("deal line: admitted", f'max(max_over_time(deal_admitted[{rng}]))', lambda v: f"{float(v):.0f}")
+show("deal line: admission rate min / max (per s)",
+     f'label_replace(min(min_over_time(deal_admission_rate[{rng}])), "s", "min", "", "")'
+     f' or label_replace(max(max_over_time(deal_admission_rate[{rng}])), "s", "max", "", "")')
 show("checkout availability (SLO 99.9 %)",
      f'1 - sum(increase(gateway_edge_requests_seconds_count{{priority="critical",outcome=~"server_error|shed"}}[{rng}]))'
      f' / sum(increase(gateway_edge_requests_seconds_count{{priority="critical"}}[{rng}]))', lambda v: f"{100*float(v):.3f} %")

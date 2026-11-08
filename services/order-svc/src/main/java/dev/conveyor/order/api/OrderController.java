@@ -46,15 +46,18 @@ class OrderController {
     private static final int MAX_PAGE = 50;
 
     private final OrderService orders;
+    private final DealAdmissions deals;
 
-    OrderController(OrderService orders) {
+    OrderController(OrderService orders, DealAdmissions deals) {
         this.orders = orders;
+        this.deals = deals;
     }
 
     @PostMapping
     ResponseEntity<OrderResponse> place(
             @AuthenticationPrincipal Jwt jwt,
             @RequestHeader(value = IDEMPOTENCY_KEY, required = false) @Nullable String key,
+            @RequestHeader(value = DealAdmissions.HEADER, required = false) @Nullable String admission,
             @RequestBody PlaceOrderRequest request) {
         if (key == null) {
             throw Problems.of(HttpStatus.BAD_REQUEST, "Send an Idempotency-Key header (8-64 of A-Z a-z 0-9 _ -).");
@@ -67,6 +70,7 @@ class OrderController {
                 : request.items().stream()
                         .map(i -> new PlaceOrder.Item(i.sku(), i.quantity()))
                         .toList();
+        deals.check(jwt.getSubject(), items, admission);
         Placement placement;
         try {
             placement = orders.place(new PlaceOrder(jwt.getSubject(), key, items, request.shipToRegion()));

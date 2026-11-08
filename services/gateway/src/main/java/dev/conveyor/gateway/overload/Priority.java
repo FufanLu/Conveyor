@@ -27,6 +27,9 @@ public enum Priority {
         if (path.endsWith("/events") || path.equals("/api/v1/ops/map")) {
             return UNLIMITED;
         }
+        if (path.startsWith("/api/v1/deals")) {
+            return UNLIMITED; // the waiting room: answered by the gateway from memory, no upstream
+        }
         if (path.startsWith("/api/v1/orders")) {
             return CRITICAL;
         }

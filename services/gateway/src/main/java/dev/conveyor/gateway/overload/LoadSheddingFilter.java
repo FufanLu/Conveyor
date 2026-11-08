@@ -1,5 +1,7 @@
 package dev.conveyor.gateway.overload;
 
+import dev.conveyor.gateway.deals.AdmissionFilter;
+import dev.conveyor.gateway.deals.LaneStats;
 import dev.conveyor.platform.web.RequestIds;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.Gauge;
@@ -34,22 +36,28 @@ public final class LoadSheddingFilter implements WebFilter, Ordered {
             @DefaultValue("64") int initialLimit,
             @DefaultValue("8") int minLimit,
             @DefaultValue("1000") int maxLimit,
-            @DefaultValue("2.0") double tolerance) {}
+            @DefaultValue("2.0") double tolerance,
+            @DefaultValue("0.5") double dealShare) {}
 
     private final Settings settings;
     private final AdaptiveLimit limit;
     private final AtomicInteger inflight = new AtomicInteger();
+    private final AtomicInteger dealInflight = new AtomicInteger();
+    private final LaneStats dealLane;
     private final Map<Priority, Counter> shed = new EnumMap<>(Priority.class);
     private final Map<Priority, Counter> admitted = new EnumMap<>(Priority.class);
     private final MeterRegistry registry;
 
-    public LoadSheddingFilter(Settings settings, MeterRegistry registry) {
+    public LoadSheddingFilter(Settings settings, MeterRegistry registry, LaneStats dealLane) {
         this.settings = settings;
+        this.dealLane = dealLane;
         this.registry = registry;
         this.limit = new AdaptiveLimit(
                 settings.initialLimit(), settings.minLimit(), settings.maxLimit(), settings.tolerance());
         Gauge.builder("gateway.concurrency.limit", limit, AdaptiveLimit::limit).register(registry);
         Gauge.builder("gateway.concurrency.inflight", inflight, AtomicInteger::get)
+                .register(registry);
+        Gauge.builder("gateway.concurrency.inflight.deal", dealInflight, AtomicInteger::get)
                 .register(registry);
         for (Priority p : Priority.values()) {
             if (p == Priority.UNLIMITED) {
@@ -80,23 +88,40 @@ public final class LoadSheddingFilter implements WebFilter, Ordered {
         if (!settings.enabled() || priority == Priority.UNLIMITED) {
             return chain.filter(exchange);
         }
+        // Per-route admission inside checkout: orders that carry a deal admission run in their
+        // own lane, which may hold at most dealShare of the limit, so a deal can never use up the
+        // slots regular checkout needs (during the M8 run it did: 35 of 240 regular orders got in).
+        boolean deal = priority == Priority.CRITICAL
+                && exchange.getRequest().getHeaders().containsHeader(AdmissionFilter.HEADER);
+        String lane = deal ? "deal" : "default";
         int now = inflight.incrementAndGet();
+        int dealNow = deal ? dealInflight.incrementAndGet() : 0;
         long start = System.nanoTime();
-        if (now > limit.limit() * priority.share) {
+        int current = limit.limit();
+        if (now > current * priority.share || (deal && dealNow > current * settings.dealShare())) {
             inflight.decrementAndGet();
+            if (deal) {
+                dealInflight.decrementAndGet();
+                dealLane.shed();
+            }
             shed.get(priority).increment();
-            record(priority, "shed", start);
+            record(priority, lane, "shed", start);
             return reject(exchange, priority);
         }
         admitted.get(priority).increment();
         return chain.filter(exchange).doFinally(signal -> {
             int left = inflight.getAndDecrement();
-            limit.sample(System.nanoTime() - start, left);
+            long rtt = System.nanoTime() - start;
+            limit.sample(rtt, left);
             var status = exchange.getResponse().getStatusCode();
             String outcome = status == null || status.is5xxServerError()
                     ? "server_error"
                     : status.is4xxClientError() ? "client_error" : "ok";
-            record(priority, outcome, start);
+            if (deal) {
+                dealInflight.decrementAndGet();
+                dealLane.completed(rtt, outcome.equals("server_error"));
+            }
+            record(priority, lane, outcome, start);
         });
     }
 
@@ -104,9 +129,10 @@ public final class LoadSheddingFilter implements WebFilter, Ordered {
      * The edge SLI: every upstream request by priority and outcome, with a histogram bucket at
      * the 300 ms latency objective. deploy/compose/prometheus/slo.rules.yml builds the SLOs on it.
      */
-    private void record(Priority priority, String outcome, long startNanos) {
+    private void record(Priority priority, String lane, String outcome, long startNanos) {
         Timer.builder("gateway.edge.requests")
                 .tag("priority", priority.name().toLowerCase(java.util.Locale.ROOT))
+                .tag("lane", lane)
                 .tag("outcome", outcome)
                 .serviceLevelObjectives(java.time.Duration.ofMillis(300))
                 .publishPercentileHistogram()

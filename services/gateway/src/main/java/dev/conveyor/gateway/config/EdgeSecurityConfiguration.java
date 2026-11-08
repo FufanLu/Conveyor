@@ -26,6 +26,9 @@ class EdgeSecurityConfiguration {
                 .formLogin(ServerHttpSecurity.FormLoginSpec::disable)
                 .securityContextRepository(NoOpServerSecurityContextRepository.getInstance()) // stateless
                 .authorizeExchange(exchanges -> exchanges
+                        // A place in a deal's line turns into an admission for one customer.
+                        .pathMatchers("/api/v1/deals/*/queue/**")
+                        .authenticated()
                         .pathMatchers(HttpMethod.GET, "/**")
                         .permitAll()
                         .pathMatchers(HttpMethod.HEAD, "/**")

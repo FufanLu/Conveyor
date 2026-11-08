@@ -2,6 +2,7 @@ package dev.conveyor.gateway.overload;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import dev.conveyor.gateway.deals.LaneStats;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.util.ArrayList;
 import java.util.List;
@@ -15,8 +16,8 @@ import reactor.core.publisher.Sinks;
 class LoadSheddingFilterTest {
 
     private final SimpleMeterRegistry meters = new SimpleMeterRegistry();
-    private final LoadSheddingFilter filter =
-            new LoadSheddingFilter(new LoadSheddingFilter.Settings(true, 20, 4, 100, 1.5), meters);
+    private final LoadSheddingFilter filter = new LoadSheddingFilter(
+            new LoadSheddingFilter.Settings(true, 20, 4, 100, 1.5, 0.5), meters, new LaneStats());
     private final List<Sinks.Empty<Void>> held = new ArrayList<>();
 
     /** Sends a request through the filter to an upstream that does not answer until released. */
@@ -111,5 +112,40 @@ class LoadSheddingFilterTest {
         assertThat(exchange.getResponse().getBodyAsString().block())
                 .contains("\"status\":503")
                 .contains("retry in a moment");
+    }
+
+    @Test
+    void aDealCannotTakeTheSlotsRegularCheckoutNeeds() {
+        // limit 20, deal lane 50 %: admitted deal orders hold at most 10 slots
+        List<MockServerWebExchange> deal = new ArrayList<>();
+        for (int i = 0; i < 14; i++) {
+            deal.add(send(MockServerHttpRequest.post("/api/v1/orders")
+                    .header("Conveyor-Admission", "a.b")
+                    .build()));
+        }
+        assertThat(deal.subList(0, 10)).noneMatch(LoadSheddingFilterTest::shed);
+        assertThat(deal.subList(10, 14)).allMatch(LoadSheddingFilterTest::shed);
+
+        // regular checkout still finds the other 10
+        List<MockServerWebExchange> regular = new ArrayList<>();
+        for (int i = 0; i < 10; i++) {
+            regular.add(send(MockServerHttpRequest.post("/api/v1/orders").build()));
+        }
+        assertThat(regular).noneMatch(LoadSheddingFilterTest::shed);
+        assertThat(meters.get("gateway.edge.requests")
+                        .tag("lane", "deal")
+                        .tag("outcome", "shed")
+                        .timer()
+                        .count())
+                .isEqualTo(4);
+    }
+
+    @Test
+    void theWaitingRoomIsNotUpstreamTraffic() {
+        for (int i = 0; i < 50; i++) {
+            assertThat(shed(send(MockServerHttpRequest.get("/api/v1/deals/d1/queue/t")
+                            .build())))
+                    .isFalse();
+        }
     }
 }

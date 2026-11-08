@@ -102,11 +102,18 @@ conveyor:
     fulfillment: http://localhost:8084
     tracking: http://localhost:8085
   # Edge admission (LoadSheddingFilter): an adaptive concurrency limit shared by all routes;
-  # search may use 50 % of it, product pages 80 %, orders 100 %.
+  # search may use 40 % of it, product pages 60 %, orders 100 %, and orders that carry a deal
+  # admission at most 50 % (their own lane).
   gateway:
     shedding:
       enabled: true
       initial-limit: 64
+  # Deals sold through a waiting room (deals/WaitingRooms), none by default. order-svc reads the
+  # same keys. For example (tools/loadtest/prime-day.sh):
+  #   CONVEYOR_DEALS_SECRET=...  CONVEYOR_DEALS_ITEMS_0_ID=lightning-1
+  #   CONVEYOR_DEALS_ITEMS_0_SKU=B09E3779B1  CONVEYOR_DEALS_ITEMS_0_UNITS=6000
+  deals:
+    secret: ${CONVEYOR_DEALS_SECRET:dev-only-deal-secret-change-me}
 
 # Rate limiting fails open when Redis is down (every request allowed), so Redis is not a
 # reason to take the gateway out of rotation: its health indicator stays off.
