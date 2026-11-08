@@ -10,11 +10,14 @@ set -uo pipefail
 OUT=${OUT:-build/prime-day}
 CUSTOMERS=${CUSTOMERS:-200}
 DEAL_BUYERS=${DEAL_BUYERS:-7000}
+# Simulated shipments, one report each per second for the whole run.
+COURIER_SHIPMENTS=${COURIER_SHIPMENTS:-2000}
 # shellcheck source=../stack/up.sh
 source tools/stack/up.sh
 
-echo "### couriers: 2,000 shipments on 100 couriers, 1 Hz, for the whole run"
-"$JAVA" tools/simulator/CourierSim.java http://localhost:8085 2000 100 1 420 > "$OUT/couriers.txt" 2>&1 &
+echo "### couriers: $COURIER_SHIPMENTS shipments, 1 Hz, for the whole run"
+"$JAVA" tools/simulator/CourierSim.java http://localhost:8085 "$COURIER_SHIPMENTS" "$(( (COURIER_SHIPMENTS + 19) / 20 ))" 1 420 \
+    > "$OUT/couriers.txt" 2>&1 &
 PIDS+=($!)
 
 echo "### prime day"

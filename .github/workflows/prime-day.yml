@@ -11,6 +11,9 @@ on:
       deal_buyers:
         description: Buyers who try the 6,000-unit deal within 60 s
         default: "7000"
+      courier_shipments:
+        description: Simulated shipments reporting once a second during the run
+        default: "2000"
 
 permissions:
   contents: read
@@ -39,6 +42,7 @@ jobs:
         env:
           CUSTOMERS: ${{ inputs.customers }}
           DEAL_BUYERS: ${{ inputs.deal_buyers }}
+          COURIER_SHIPMENTS: ${{ inputs.courier_shipments }}
         run: tools/loadtest/prime-day.sh | tee prime-day-results.txt
 
       - uses: actions/upload-artifact@v7
