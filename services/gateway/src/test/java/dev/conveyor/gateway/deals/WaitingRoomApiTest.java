@@ -68,7 +68,8 @@ class WaitingRoomApiTest {
     private final String token = "Bearer " + TestJwts.tokenForSubject("shopper-1", "customer");
 
     private HttpResponse<String> send(String method, String path, String auth) throws Exception {
-        var b = HttpRequest.newBuilder(URI.create("http://localhost:" + environment.getProperty("local.server.port") + path))
+        var b = HttpRequest.newBuilder(
+                        URI.create("http://localhost:" + environment.getProperty("local.server.port") + path))
                 .method(method, HttpRequest.BodyPublishers.noBody());
         if (auth != null) {
             b.header("Authorization", auth);
@@ -78,7 +79,8 @@ class WaitingRoomApiTest {
 
     @Test
     void theLineAdmitsAtItsRateAndTellsLateComersAtOnce() throws Exception {
-        assertThat(send("POST", "/api/v1/deals/lightning-1/queue", null).statusCode()).isEqualTo(401);
+        assertThat(send("POST", "/api/v1/deals/lightning-1/queue", null).statusCode())
+                .isEqualTo(401);
 
         List<String> tickets = new ArrayList<>();
         for (int i = 1; i <= 6; i++) {
@@ -99,10 +101,13 @@ class WaitingRoomApiTest {
                 .untilAsserted(() -> assertThat(send("GET", path, token).body()).contains("\"state\":\"ADMITTED\""));
         assertThat(send("GET", path, token).body()).contains("\"admission\":\"");
 
-        assertThat(send("GET", "/api/v1/deals", null).body()).contains("\"joined\":6").contains("\"admitted\":4");
+        assertThat(send("GET", "/api/v1/deals", null).body())
+                .contains("\"joined\":6")
+                .contains("\"admitted\":4");
 
         // a ticket for another deal, or a forged one, is no place in this line
-        assertThat(send("GET", "/api/v1/deals/lightning-1/queue/forged.ticket", token).statusCode())
+        assertThat(send("GET", "/api/v1/deals/lightning-1/queue/forged.ticket", token)
+                        .statusCode())
                 .isEqualTo(404);
         // an order with a forged admission never reaches order-svc
         assertThat(http.send(
