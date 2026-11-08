@@ -17,13 +17,15 @@ spec:
       command: ["sh", "-c"]
       args:
         - |
+          # No "$$" in here: Kubernetes rewrites "$$" in container args to a literal "$" before the
+          # shell runs (the first kind run sent "Idempotency-Key: smoke-<time>-$" and got a 400).
           set -e
           token=$(curl -fsS {{ .Values.endpoints.issuer }}/protocol/openid-connect/token \
             -d grant_type=password -d client_id=conveyor-cli -d username=alice -d password=alice \
             | sed -n 's/.*"access_token":"\([^"]*\)".*/\1/p')
           [ -n "$token" ] || { echo "no token"; exit 1; }
           order=$(curl -sS -w '\n%{http_code}' -X POST http://gateway:8080/api/v1/orders \
-            -H "Authorization: Bearer $token" -H "Idempotency-Key: smoke-$(date +%s)-$$" \
+            -H "Authorization: Bearer $token" -H "Idempotency-Key: smoke-$(date +%s)-$RANDOM" \
             -H 'Content-Type: application/json' \
             -d '{"items":[{"sku":"B09E3779B1","quantity":1}],"shipToRegion":"us-east"}')
           echo "POST /api/v1/orders -> $(echo "$order" | tail -n1): $(echo "$order" | head -n1)"
