@@ -27,8 +27,10 @@ final class Line {
         }
         long ahead = place - frontier;
         long eta = (long) Math.ceil(ahead / Math.max(rate, 0.1));
-        // Poll about twice before the turn comes: 1 s when close, at most every 15 s when far.
-        long poll = Math.clamp(eta * 1000 / 2, 1000, 15_000);
+        // Poll about twice before the turn comes: 1 s when close, at most once a minute when far.
+        // The first Prime Day run capped it at 15 s: 6,000 customers in line then sent ~400
+        // polls a second through the same saturated gateway as checkout (docs/illustrated/09).
+        long poll = Math.clamp(eta * 1000 / 2, 1000, 60_000);
         return new Status(State.WAITING, place, ahead, eta, poll);
     }
 

@@ -15,7 +15,8 @@ class LineTest {
         assertThat(waiting.state()).isEqualTo(Line.State.WAITING);
         assertThat(waiting.ahead()).isEqualTo(600);
         assertThat(waiting.etaSeconds()).isEqualTo(30);
-        assertThat(waiting.pollAfterMillis()).isEqualTo(15_000);
+        assertThat(waiting.pollAfterMillis()).isEqualTo(15_000); // eta 30 s
+        assertThat(Line.status(6000, 100, 6600, 2).pollAfterMillis()).isEqualTo(60_000);
         // close to the front: poll every second
         assertThat(Line.status(110, 100, 6600, 20).pollAfterMillis()).isEqualTo(1000);
     }

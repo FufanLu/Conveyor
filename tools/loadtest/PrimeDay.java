@@ -260,13 +260,16 @@ public class PrimeDay {
         String user = users.get(ThreadLocalRandom.current().nextInt(users.size()));
         long t0 = System.nanoTime();
         try {
-            HttpResponse<String> r = send("POST", "/api/v1/deals/" + DEAL_ID + "/queue", user);
-            if (r.statusCode() != 201) {
-                visits.add(new Buyer("ERROR", 0, 0));
-                return;
+            // A failed join or poll is retried after a few seconds, as the web page does; the
+            // first run counted one timed-out poll as a lost customer (5,427 of them).
+            String body = null;
+            while (body == null) {
+                HttpResponse<String> r = trySend("POST", "/api/v1/deals/" + DEAL_ID + "/queue", user);
+                if (r != null && r.statusCode() == 201) body = r.body();
+                else if (gaveUp(t0)) return;
+                else Thread.sleep(3000 + ThreadLocalRandom.current().nextLong(2000));
             }
-            String ticket = field(r.body(), "ticket");
-            String body = r.body();
+            String ticket = field(body, "ticket");
             while (true) {
                 String state = field(body, "state");
                 if (state.equals("SOLD_OUT")) {
@@ -274,14 +277,18 @@ public class PrimeDay {
                     return;
                 }
                 if (state.equals("ADMITTED")) break;
-                if (System.nanoTime() - t0 > PATIENCE_NANOS) {
-                    visits.add(new Buyer("GAVE_UP", (System.nanoTime() - t0) / 1_000_000, 0));
-                    return;
-                }
+                if (gaveUp(t0)) return;
                 long poll = Long.parseLong(field(body, "pollAfterMs"));
                 Thread.sleep(poll + ThreadLocalRandom.current().nextLong(500));
-                HttpResponse<String> p = send("GET", "/api/v1/deals/" + DEAL_ID + "/queue/" + ticket, user);
-                if (p.statusCode() == 200) body = p.body();
+                HttpResponse<String> p;
+                while ((p = trySend("GET", "/api/v1/deals/" + DEAL_ID + "/queue/" + ticket, user)) == null
+                        || p.statusCode() != 200) {
+                    polls.computeIfAbsent(p == null ? "timeout" : Integer.toString(p.statusCode()), k -> new java.util.concurrent.atomic.AtomicLong()).incrementAndGet();
+                    if (gaveUp(t0)) return;
+                    Thread.sleep(3000 + ThreadLocalRandom.current().nextLong(2000));
+                }
+                polls.computeIfAbsent("200", k -> new java.util.concurrent.atomic.AtomicLong()).incrementAndGet();
+                body = p.body();
             }
             long waited = (System.nanoTime() - t0) / 1_000_000;
             String admission = field(body, "admission");
@@ -300,7 +307,24 @@ public class PrimeDay {
             }
             visits.add(new Buyer("REFUSED", waited, 4));
         } catch (Exception e) {
-            visits.add(new Buyer("ERROR", (System.nanoTime() - t0) / 1_000_000, 0));
+            visits.add(new Buyer("ERROR " + e.getClass().getSimpleName(), (System.nanoTime() - t0) / 1_000_000, 0));
+        }
+    }
+
+    static final Map<String, java.util.concurrent.atomic.AtomicLong> polls = new ConcurrentHashMap<>();
+
+    static boolean gaveUp(long t0) {
+        if (System.nanoTime() - t0 <= PATIENCE_NANOS) return false;
+        visits.add(new Buyer("GAVE_UP", (System.nanoTime() - t0) / 1_000_000, 0));
+        return true;
+    }
+
+    /** A request whose failure (timeout, refused connection) is an answer, not an exception. */
+    static HttpResponse<String> trySend(String method, String path, String user) {
+        try {
+            return send(method, path, user);
+        } catch (Exception e) {
+            return null;
         }
     }
 
@@ -333,6 +357,7 @@ public class PrimeDay {
     }
 
     static void dealReport() {
+        System.out.println("### line polls by answer: " + new TreeMap<>(polls));
         System.out.println("### deal buyers by outcome (wait = join to admission, or to the answer)");
         Map<String, List<Buyer>> by = new TreeMap<>();
         visits.forEach(v -> by.computeIfAbsent(v.outcome(), k -> new ArrayList<>()).add(v));
