@@ -35,6 +35,24 @@ final class Line {
     }
 
     /**
+     * How many more places the line may admit now. Admissions are valid for a while (ten
+     * minutes); the ones handed out within that window and not yet turned into orders are
+     * outstanding. The line keeps outstanding admissions at stock x overbook, so admissions
+     * handed to customers who walked away come back once they expire. The third Prime Day run
+     * capped places at units x 1.1 instead, and gave 6,601 admissions for 1,043 orders.
+     *
+     * @param available the deal SKU's unreserved stock
+     * @param overbook admissions per unit of stock
+     * @param admittedInWindow places admitted within the admission lifetime
+     * @param soldInWindow units reserved within the same window
+     */
+    static long allowance(long available, double overbook, long admittedInWindow, long soldInWindow) {
+        long outstanding = Math.max(0, admittedInWindow - soldInWindow);
+        // round first: 100 x 1.1 is 110.00000000000001 in binary floating point
+        return Math.max(0, (long) Math.ceil(Math.round(available * overbook * 1e6) / 1e6) - outstanding);
+    }
+
+    /**
      * The next admission rate, additive increase and multiplicative decrease on what the deal
      * lane saw in the last second: back off by a quarter when deal orders were shed, failed, or
      * took longer than the target on average; grow by 5 % (at least 1/s) while people wait.

@@ -33,6 +33,8 @@ services:
       CONVEYOR_UPSTREAMS_ORDER: http://order-svc:8082
       CONVEYOR_UPSTREAMS_FULFILLMENT: http://fulfillment-svc:8084
       CONVEYOR_UPSTREAMS_TRACKING: http://tracking-svc:8085
+      # The waiting room reads each deal SKU's stock from here (internal, no public route).
+      CONVEYOR_DEALS_INVENTORYURL: http://inventory-svc:8083
   catalog-svc:
     port: 8081
     replicas: 2

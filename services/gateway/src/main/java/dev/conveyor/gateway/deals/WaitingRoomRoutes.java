@@ -67,6 +67,8 @@ public final class WaitingRoomRoutes {
                         r.issued,
                         "admitted",
                         r.frontier,
+                        "available",
+                        r.available,
                         "admissionsPerSecond",
                         Math.round(r.rate * 10) / 10.0))
                 .toList();
@@ -118,7 +120,7 @@ public final class WaitingRoomRoutes {
 
     private Mono<ServerResponse> answer(
             ServerRequest request, WaitingRooms.Room r, long place, String ticket, ServerResponse.BodyBuilder builder) {
-        Line.Status status = Line.status(place, r.frontier, r.deal.places(), r.rate);
+        Line.Status status = Line.status(place, r.frontier, r.capacity(), r.rate);
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("dealId", r.deal.id());
         body.put("sku", r.deal.sku());

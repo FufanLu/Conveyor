@@ -26,6 +26,7 @@ import reactor.core.publisher.Mono;
  *   deal:{id}:join:{customer}:{Idempotency-Key}   the place a join got, for an hour
  *   deal:{id}:frontier  places up to here are admitted; only moves forward
  *   deal:{id}:rate      admissions per second, set by the leader
+ *   deal:{id}:available the deal SKU's unreserved stock, read from inventory-svc by the leader
  *   deal:{id}:leader    lease (SET NX PX 3000) of the instance that advances the frontier
  * </pre>
  *
@@ -74,7 +75,12 @@ public final class WaitingRooms implements DisposableBean {
         volatile long issued;
         volatile long frontier;
         volatile double rate;
+        /** Unreserved stock; -1 until inventory-svc has answered (the line then caps at units x overbook). */
+        volatile long available = -1;
+
         double carry; // fractional admissions owed, leader only
+        /** {nanoTime, frontier, units sold} once a second, for the admission lifetime; leader only. */
+        final java.util.ArrayDeque<long[]> window = new java.util.ArrayDeque<>();
 
         Room(DealSettings.Deal deal) {
             this.deal = deal;
@@ -84,6 +90,14 @@ public final class WaitingRooms implements DisposableBean {
         String key(String part) {
             return "deal:" + deal.id() + ":" + part;
         }
+
+        /** Places past this are told the deal sold out. */
+        long capacity() {
+            if (available < 0) {
+                return deal.places();
+            }
+            return available == 0 ? frontier : Long.MAX_VALUE;
+        }
     }
 
     private final Map<String, Room> rooms = new LinkedHashMap<>();
@@ -92,12 +106,14 @@ public final class WaitingRooms implements DisposableBean {
     private final DealTokens tokens;
     private final String instance = UUID.randomUUID().toString();
     private final Disposable ticker;
+    private final org.springframework.web.reactive.function.client.WebClient inventory;
 
     public WaitingRooms(
             DealSettings settings, ReactiveStringRedisTemplate redis, LaneStats lane, MeterRegistry meters) {
         this.redis = redis;
         this.lane = lane;
         this.tokens = new DealTokens(settings.secret());
+        this.inventory = org.springframework.web.reactive.function.client.WebClient.create(settings.inventoryUrl());
         for (DealSettings.Deal deal : settings.items()) {
             Room room = new Room(deal);
             rooms.put(deal.id(), room);
@@ -165,7 +181,39 @@ public final class WaitingRooms implements DisposableBean {
     }
 
     private Mono<Void> advance(Room room, LaneStats.Window window) {
+        return stock(room).defaultIfEmpty(room.available).flatMap(available -> advance(room, window, available));
+    }
+
+    /** The deal SKU's unreserved stock from inventory-svc, or empty if it does not answer in time. */
+    private Mono<Long> stock(Room room) {
+        return inventory
+                .get()
+                .uri("/v1/inventory/{sku}", room.deal.sku())
+                .retrieve()
+                .bodyToMono(java.util.Map.class)
+                .timeout(Duration.ofMillis(500))
+                .map(body -> ((Number) body.get("available")).longValue())
+                .onErrorResume(e -> Mono.empty());
+    }
+
+    private Mono<Void> advance(Room room, LaneStats.Window window, long available) {
         DealSettings.Deal deal = room.deal;
+        long now = System.nanoTime();
+        long capacity;
+        long allowed;
+        if (available < 0) {
+            capacity = deal.places(); // stock unknown: a fixed number of places
+            allowed = Long.MAX_VALUE;
+        } else {
+            long sold = deal.units() - available;
+            room.window.addLast(new long[] {now, room.frontier, sold});
+            while (now - room.window.peekFirst()[0] > deal.admissionTtl().toNanos()) {
+                room.window.removeFirst();
+            }
+            long[] oldest = room.window.peekFirst();
+            allowed = Line.allowance(available, deal.overbook(), room.frontier - oldest[1], sold - oldest[2]);
+            capacity = Long.MAX_VALUE;
+        }
         double rate = Line.nextRate(
                 room.rate,
                 deal.minRate(),
@@ -174,33 +222,38 @@ public final class WaitingRooms implements DisposableBean {
                 window.errors(),
                 window.meanLatencyMillis(),
                 (double) deal.targetLatency().toMillis(),
-                room.issued > room.frontier);
+                room.issued > room.frontier && allowed > 0);
         room.carry += rate;
-        long step = (long) room.carry;
-        room.carry -= step;
+        long step = Math.min((long) room.carry, allowed);
+        room.carry -= (long) room.carry;
         return redis.execute(
                         ADVANCE,
                         List.of(room.key("frontier"), room.key("issued")),
-                        List.of(Long.toString(deal.places()), Long.toString(step)))
+                        List.of(Long.toString(capacity), Long.toString(step)))
                 .next()
                 .flatMap(result -> {
                     room.frontier = result.get(0);
                     room.issued = result.get(1);
                     room.rate = rate;
-                    return redis.opsForValue().set(room.key("rate"), Double.toString(rate));
+                    room.available = available;
+                    return redis.opsForValue()
+                            .multiSet(java.util.Map.of(
+                                    room.key("rate"), Double.toString(rate),
+                                    room.key("available"), Long.toString(available)));
                 })
                 .then();
     }
 
     private Mono<Void> refresh(Room room) {
         return redis.opsForValue()
-                .multiGet(List.of(room.key("issued"), room.key("frontier"), room.key("rate")))
+                .multiGet(List.of(room.key("issued"), room.key("frontier"), room.key("rate"), room.key("available")))
                 .doOnNext(v -> {
                     room.issued = parse(v.get(0), room.issued);
                     room.frontier = parse(v.get(1), room.frontier);
                     if (v.get(2) != null) {
                         room.rate = Double.parseDouble(v.get(2));
                     }
+                    room.available = parse(v.get(3), room.available);
                 })
                 .then();
     }

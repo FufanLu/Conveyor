@@ -11,11 +11,13 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  *
  * @param secret HMAC key for tickets and admissions, shared with order-svc
  * @param items the deals
+ * @param inventoryUrl inventory-svc, where the line reads each deal SKU's stock once a second
  */
 @ConfigurationProperties("conveyor.deals")
 public record DealSettings(
         @DefaultValue("dev-only-deal-secret-change-me") String secret,
-        @DefaultValue List<Deal> items) {
+        @DefaultValue List<Deal> items,
+        @DefaultValue("http://localhost:8083") String inventoryUrl) {
 
     /**
      * One deal and how its line admits buyers.

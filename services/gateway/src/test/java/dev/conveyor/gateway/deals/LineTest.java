@@ -30,4 +30,15 @@ class LineTest {
         assertThat(Line.nextRate(10, 2, 500, 0, 0, 100, 500, true)).isEqualTo(11);
         assertThat(Line.nextRate(40, 2, 500, 0, 0, 100, 500, false)).isEqualTo(40);
     }
+
+    @Test
+    void outstandingAdmissionsAreHeldToStockAndComeBackWhenTheyExpire() {
+        // 100 units left, 10 % overbooking: 110 admissions may be outstanding
+        assertThat(Line.allowance(100, 1.1, 0, 0)).isEqualTo(110);
+        // 80 admitted in the last ten minutes, 30 of them already ordered: 50 outstanding
+        assertThat(Line.allowance(100, 1.1, 80, 30)).isEqualTo(60);
+        // walked-away customers hold every admission: wait until they expire
+        assertThat(Line.allowance(100, 1.1, 200, 0)).isZero();
+        assertThat(Line.allowance(0, 1.1, 0, 0)).isZero();
+    }
 }
