@@ -10,7 +10,7 @@ back to the customer.
 Java 25 and Spring Boot 4.1 microservices. Each piece of middleware is chosen so it maps onto an
 AWS managed service: the same design runs on a laptop with Docker and on AWS.
 
-> **Status: M8 is done: all milestones complete.** On top of the platform (M0), the catalog (M1: two-level cache, Bloom
+> **Status: M9 is done.** On top of the platform (M0), the catalog (M1: two-level cache, Bloom
 > filter, OpenSearch, guarded writes), orders (M2: 16 shards, idempotency, outbox → Debezium →
 > Kafka, CQRS read model) and inventory (M3: Redis Lua gate, Postgres facts, reconciler,
 > bulkhead), every placed order now runs a Temporal saga: reserve, authorize, commit, promise a
@@ -20,7 +20,8 @@ AWS managed service: the same design runs on a laptop with Docker and on AWS.
 > M7 makes it degrade on purpose: adaptive admission at the edge, a circuit breaker, SLOs with
 > burn-rate alerts, traces through the outbox, and a browser driving the full stack in CI.
 > M8 ships it to Kubernetes (Helm, proven on kind in CI), describes the AWS estate with CDK in
-> Java, and runs a scaled-down Prime Day against the whole platform. See [Roadmap](#roadmap).
+> Java, and runs a scaled-down Prime Day against the whole platform. M9 puts the deal behind a
+> virtual waiting room at the edge, with its own lane inside checkout. See [Roadmap](#roadmap).
 
 ## Architecture
 
@@ -94,6 +95,16 @@ The interesting parts, by milestone:
 ## Measured so far
 
 Every number in this repository comes from running the code.
+
+**Chapter 09 (M9).** The deal now sells through a waiting room. The line is three Redis
+counters and HMAC-signed tickets, a leader admits at an adaptive rate, and order-svc refuses
+the deal SKU without the customer's own admission. Deal orders also get their own lane, capped
+at half the edge limit. Five Prime Day runs: at the same courier load as chapter 08, deal orders
+went from 1,481 to 4,148 and checkout availability from 39.9 % to 91.5 % on the best runner.
+Two runs found real bugs: non-idempotent joins (7,000 buyers took 19,724 places) and a fixed
+capacity that left 1,852 units unsold. No run sold a unit twice. The chapter is explicit that
+the line fixes fairness, not capacity: between runners the results differ by 3.4x.
+→ [docs/illustrated/09-the-line.md](docs/illustrated/09-the-line.md)
 
 **Chapter 08 (M8).** On kind, a runner goes from an empty machine to an order confirmed in
 296 s. The CDK stack synthesizes 65 resources, and six tests assert it without an AWS account.
@@ -220,3 +231,4 @@ docs/                 architecture and the illustrated walkthroughs
 | M6 | Web: storefront, live map, ops console | done |
 | M7 | Resilience and observability: shedding, circuit breakers, tracing, SLO dashboards, chaos | done |
 | M8 | Load test and delivery: Prime Day scenario, Helm on kind, AWS CDK | done |
+| M9 | Deal day: virtual waiting room, per-route admission (deal lane), admissions checked by order-svc | done |
